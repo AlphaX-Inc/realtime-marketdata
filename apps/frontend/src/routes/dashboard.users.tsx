@@ -1,4 +1,4 @@
-import { UserPlus } from "@phosphor-icons/react";
+import { UserPlus, UsersThree } from "@phosphor-icons/react";
 import { Alert, AlertDescription } from "@realtime-pricing/ui/components/alert";
 import { Badge } from "@realtime-pricing/ui/components/badge";
 import { Button } from "@realtime-pricing/ui/components/button";
@@ -84,7 +84,7 @@ function UsersPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <PageHeaderEyebrow>Dashboard</PageHeaderEyebrow>
-            <PageHeaderTitle>User List</PageHeaderTitle>
+            <PageHeaderTitle>Users</PageHeaderTitle>
             <PageHeaderDescription>
               Create dashboard operators and disable access when a person no longer needs the
               console.
@@ -181,7 +181,21 @@ function UsersPage() {
                 <AlertDescription>Unable to load users.</AlertDescription>
               </Alert>
             ) : users.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No users yet.</p>
+              <div className="grid min-h-56 place-items-center rounded-lg border border-dashed border-border/80 bg-secondary/40 px-6 py-10 text-center">
+                <div>
+                  <div className="mx-auto grid size-12 place-items-center rounded-md bg-accent text-primary">
+                    <UsersThree className="size-6" />
+                  </div>
+                  <p className="mt-4 text-sm font-semibold text-zinc-950">No users yet</p>
+                  <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                    Add the first operator account when someone else needs access to the console.
+                  </p>
+                  <Button type="button" className="mt-5" onClick={() => setCreateOpen(true)}>
+                    <UserPlus className="size-4" />
+                    Add user
+                  </Button>
+                </div>
+              </div>
             ) : (
               <Table>
                 <TableHeader>

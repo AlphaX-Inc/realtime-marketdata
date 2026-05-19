@@ -78,7 +78,7 @@ function ApiKeysPage() {
     <div className="grid gap-5">
       <PageHeader>
         <PageHeaderEyebrow>Service access</PageHeaderEyebrow>
-        <PageHeaderTitle>Api Key</PageHeaderTitle>
+        <PageHeaderTitle>API keys</PageHeaderTitle>
         <PageHeaderDescription>
           Issue keys for internal services that connect to the realtime price WebSocket.
         </PageHeaderDescription>
@@ -138,7 +138,17 @@ function ApiKeysPage() {
               <AlertDescription>Unable to load API keys.</AlertDescription>
             </Alert>
           ) : apiKeys.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No service keys created yet.</p>
+            <div className="grid min-h-56 place-items-center rounded-lg border border-dashed border-border/80 bg-secondary/40 px-6 py-10 text-center">
+              <div>
+                <div className="mx-auto grid size-12 place-items-center rounded-md bg-accent text-primary">
+                  <Key className="size-6" />
+                </div>
+                <p className="mt-4 text-sm font-semibold text-zinc-950">No service keys created</p>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                  Create a named key above, then pass it as `x-api-key` from an internal service.
+                </p>
+              </div>
+            </div>
           ) : (
             <Table>
               <TableHeader>

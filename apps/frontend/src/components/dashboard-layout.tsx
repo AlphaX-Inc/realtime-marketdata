@@ -21,12 +21,12 @@ import { getCurrentUser, logout } from "@/lib/api";
 const navItems = [
   {
     to: "/dashboard/users",
-    label: "User List",
+    label: "Users",
     icon: UsersThree,
   },
   {
     to: "/dashboard/api-keys",
-    label: "Api Key",
+    label: "API keys",
     icon: Key,
   },
   {
@@ -61,11 +61,11 @@ export function DashboardLayout() {
   if (meQuery.isLoading) {
     return (
       <main className="h-[100dvh] bg-background">
-        <div className="grid h-[100dvh] w-full overflow-hidden lg:grid-cols-[280px_1fr]">
-          <Skeleton className="hidden h-[100dvh] rounded-none border-r bg-white lg:block" />
+        <div className="grid h-[100dvh] w-full overflow-hidden lg:grid-cols-[292px_1fr]">
+          <Skeleton className="hidden h-[100dvh] rounded-none border-r bg-card/80 lg:block" />
           <div className="space-y-5 p-5 md:p-6">
-            <Skeleton className="h-24 border bg-white" />
-            <Skeleton className="h-[520px] border bg-white" />
+            <Skeleton className="h-24 border bg-card/70" />
+            <Skeleton className="h-[520px] border bg-card/70" />
           </div>
         </div>
       </main>
@@ -77,17 +77,26 @@ export function DashboardLayout() {
     return null;
   }
 
+  const user = meQuery.data?.user;
+  const initials =
+    user?.name
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() ?? "U";
+
   return (
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader>
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-lg bg-zinc-950 text-sm font-semibold text-white">
-              RP
+            <div className="grid size-10 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground shadow-[0_12px_28px_hsl(160_31%_28%_/_0.22)]">
+              AX
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-zinc-950">Realtime Pricing</p>
-              <p className="mt-0.5 text-xs text-zinc-500">Market data gateway</p>
+              <p className="truncate text-sm font-semibold text-zinc-950">AlphaX</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Market data</p>
             </div>
           </div>
         </SidebarHeader>
@@ -116,27 +125,39 @@ export function DashboardLayout() {
         </SidebarContent>
 
         <SidebarFooter>
-          <div className="mb-3 rounded-lg bg-zinc-50 p-3">
-            <p className="truncate text-sm font-semibold text-zinc-950">
-              {meQuery.data?.user.name}
-            </p>
-            <p className="truncate text-xs text-zinc-500">{meQuery.data?.user.email}</p>
+          <div className="mb-2 rounded-lg border border-white/70 bg-gradient-to-br from-card/95 to-secondary/55 p-3 shadow-[0_12px_32px_hsl(230_12%_11%_/_0.06),0_1px_0_hsl(0_0%_100%_/_0.88)_inset]">
+            <div className="flex items-center gap-3">
+              <div className="grid size-9 shrink-0 place-items-center rounded-md bg-accent text-xs font-bold text-primary shadow-[0_1px_0_hsl(0_0%_100%_/_0.78)_inset]">
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-sm font-semibold leading-5 text-zinc-950">
+                    {user?.name}
+                  </p>
+                  <span className="shrink-0 rounded-[0.3rem] bg-primary/10 px-1.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-primary">
+                    Admin
+                  </span>
+                </div>
+                <p className="truncate text-xs leading-5 text-muted-foreground">{user?.email}</p>
+              </div>
+            </div>
           </div>
           <Button
             type="button"
             variant="ghost"
-            className="w-full justify-start"
+            className="h-9 w-full justify-between rounded-md px-3 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             onClick={() => logoutMutation.mutate()}
             disabled={logoutMutation.isPending}
           >
+            <span>{logoutMutation.isPending ? "Signing out" : "Sign out"}</span>
             <SignOut className="size-4" />
-            Sign out
           </Button>
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="bg-background">
-        <div className="h-[100dvh] overflow-y-auto px-4 py-5 md:px-6">
+      <SidebarInset className="bg-transparent">
+        <div className="h-[100dvh] overflow-y-auto px-4 py-5 md:px-7 lg:px-9">
           <Outlet />
         </div>
       </SidebarInset>

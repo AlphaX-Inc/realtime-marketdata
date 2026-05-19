@@ -64,20 +64,44 @@ function DocsPage() {
             Connect services to this app only. The gateway owns the upstream Twelve Data connection.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-5">
-          <div className="grid gap-2 text-sm text-zinc-700">
-            <p>
-              Use a service API key generated from the Api Key page. Prefer the `x-api-key` header
-              for backend services; use the `api_key` query parameter only when the WebSocket client
-              cannot send headers.
-            </p>
+        <CardContent className="grid gap-4">
+          <div className="rounded-lg border border-primary/15 bg-accent/45 px-4 py-3 text-sm leading-6 text-zinc-700">
+            Generate a service key from{" "}
+            <span className="font-semibold text-zinc-950">API keys</span>, then connect to the
+            gateway below. Backend services should send the key in a header; query-string auth is
+            only for WebSocket clients that cannot send headers.
           </div>
-          <CodeBlock>
-            <code>{`ws://localhost:3000/ws/prices?api_key=rtp_<keyId>_<secret>`}</code>
-          </CodeBlock>
-          <CodeBlock>
-            <code>{`x-api-key: rtp_<keyId>_<secret>`}</code>
-          </CodeBlock>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-lg border border-border/70 bg-card/70 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-950">Backend services</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Preferred: keep the key out of URLs and logs.
+                  </p>
+                </div>
+                <span className="rounded-[0.3rem] bg-primary/10 px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-primary">
+                  Recommended
+                </span>
+              </div>
+              <CodeBlock className="mt-3">
+                <code>{`x-api-key: rtp_<keyId>_<secret>`}</code>
+              </CodeBlock>
+            </div>
+
+            <div className="rounded-lg border border-border/70 bg-card/70 p-4">
+              <div>
+                <p className="text-sm font-semibold text-zinc-950">Browser or limited clients</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Use only when the client cannot attach headers.
+                </p>
+              </div>
+              <CodeBlock className="mt-3">
+                <code>{`ws://localhost:3000/ws/prices?api_key=rtp_<keyId>_<secret>`}</code>
+              </CodeBlock>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -89,16 +113,16 @@ function DocsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5">
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-hidden rounded-lg border border-border/70 bg-card/80">
             <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-50 text-zinc-600">
+              <thead className="bg-secondary/70 text-zinc-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Field</th>
                   <th className="px-4 py-3 font-medium">Required</th>
                   <th className="px-4 py-3 font-medium">Description</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-border/70">
                 <tr>
                   <td className="px-4 py-3 font-mono text-xs">type</td>
                   <td className="px-4 py-3">Yes</td>
@@ -214,16 +238,16 @@ function DocsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5">
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-hidden rounded-lg border border-border/70 bg-card/80">
             <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-50 text-zinc-600">
+              <thead className="bg-secondary/70 text-zinc-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">State</th>
                   <th className="px-4 py-3 font-medium">Window</th>
                   <th className="px-4 py-3 font-medium">Price behavior</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-border/70">
                 {marketStates.map(([state, window, behavior]) => (
                   <tr key={state}>
                     <td className="px-4 py-3 font-mono text-xs">{state}</td>
@@ -249,15 +273,15 @@ function DocsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-hidden rounded-lg border border-border/70 bg-card/80">
             <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-50 text-zinc-600">
+              <thead className="bg-secondary/70 text-zinc-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Field</th>
                   <th className="px-4 py-3 font-medium">Meaning</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-border/70">
                 {fields.map(([field, meaning]) => (
                   <tr key={field}>
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{field}</td>

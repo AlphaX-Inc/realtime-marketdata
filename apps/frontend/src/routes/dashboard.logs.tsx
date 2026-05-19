@@ -1,3 +1,4 @@
+import { Broadcast } from "@phosphor-icons/react";
 import { Alert, AlertDescription } from "@realtime-pricing/ui/components/alert";
 import { Badge } from "@realtime-pricing/ui/components/badge";
 import {
@@ -67,9 +68,18 @@ function LogsPage() {
               <AlertDescription>Unable to load gateway logs.</AlertDescription>
             </Alert>
           ) : logs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No gateway activity has been logged yet.
-            </p>
+            <div className="grid min-h-56 place-items-center rounded-lg border border-dashed border-border/80 bg-secondary/40 px-6 py-10 text-center">
+              <div>
+                <div className="mx-auto grid size-12 place-items-center rounded-md bg-accent text-primary">
+                  <Broadcast className="size-6" />
+                </div>
+                <p className="mt-4 text-sm font-semibold text-zinc-950">No gateway activity</p>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                  Connection, subscription, and upstream events will appear here as services use the
+                  WebSocket.
+                </p>
+              </div>
+            </div>
           ) : (
             <Table>
               <TableHeader>

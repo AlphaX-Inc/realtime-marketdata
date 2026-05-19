@@ -17,40 +17,25 @@ export function AuthFormShell({
   children: ReactNode;
 }) {
   return (
-    <main className="grid min-h-[100dvh] bg-background text-zinc-950 lg:grid-cols-[minmax(0,1fr)_480px]">
-      <section className="hidden border-r border-border px-10 py-10 lg:flex lg:flex-col lg:justify-between">
+    <main className="grid min-h-[100dvh] bg-background text-zinc-950 lg:grid-cols-[minmax(0,1fr)_500px]">
+      <section className="relative hidden overflow-hidden border-r border-border/70 px-12 py-10 lg:flex lg:flex-col lg:justify-center">
+        <div className="absolute inset-x-12 top-36 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
+        <div className="absolute bottom-28 right-14 h-44 w-44 rounded-full border border-primary/15 bg-accent/40 blur-3xl" />
         <div>
-          <div className="grid size-10 place-items-center rounded-lg bg-zinc-950 text-sm font-semibold text-white">
-            RP
+          <div className="grid size-11 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground shadow-[0_14px_32px_hsl(160_31%_28%_/_0.22)]">
+            AX
           </div>
-          <p className="mt-10 text-sm font-medium text-zinc-500">Realtime Pricing</p>
-          <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-tight tracking-normal">
+          <p className="mt-12 text-sm font-semibold uppercase tracking-[0.14em] text-primary/75">
+            AlphaX
+          </p>
+          <h1 className="mt-4 max-w-2xl text-5xl font-semibold leading-[1.02] tracking-normal text-balance">
             Internal market data access, controlled from one console.
           </h1>
-        </div>
-        <div className="grid max-w-xl gap-5 text-sm text-zinc-600">
-          <div>
-            <p className="font-medium text-zinc-950">Single upstream Twelve Data stream.</p>
-            <p className="mt-2 leading-6">
-              Downstream services receive normalized WebSocket prices without opening their own
-              upstream connections.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-4 border-t border-border pt-5">
-            <div>
-              <p className="text-xs uppercase tracking-[0.1em] text-zinc-500">Access</p>
-              <p className="mt-2 text-sm font-medium text-zinc-950">Service API keys</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.1em] text-zinc-500">Ops</p>
-              <p className="mt-2 text-sm font-medium text-zinc-950">Gateway logs</p>
-            </div>
-          </div>
         </div>
       </section>
 
       <section className="flex items-center justify-center px-5 py-10">
-        <Card className="w-full max-w-md border-zinc-200 bg-white">
+        <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="text-2xl">{title}</CardTitle>
             <CardDescription>{description}</CardDescription>

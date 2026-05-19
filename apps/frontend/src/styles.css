@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;450;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;600;700&family=Geist+Mono:wght@450;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,26 +6,26 @@
 
 @layer base {
   :root {
-    --background: 0 0% 98%;
-    --foreground: 240 6% 10%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 6% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 6% 10%;
-    --primary: 240 6% 10%;
+    --background: 44 33% 96%;
+    --foreground: 230 12% 11%;
+    --card: 42 31% 98%;
+    --card-foreground: 230 12% 11%;
+    --popover: 42 31% 98%;
+    --popover-foreground: 230 12% 11%;
+    --primary: 160 31% 28%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 10%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 45%;
-    --accent: 240 5% 94%;
-    --accent-foreground: 240 6% 10%;
+    --secondary: 44 23% 91%;
+    --secondary-foreground: 230 12% 16%;
+    --muted: 45 18% 91%;
+    --muted-foreground: 225 7% 42%;
+    --accent: 158 22% 88%;
+    --accent-foreground: 161 34% 17%;
     --destructive: 4 63% 44%;
     --destructive-foreground: 210 40% 98%;
-    --border: 240 6% 88%;
-    --input: 240 6% 84%;
-    --ring: 240 5% 26%;
-    --radius: 0.625rem;
+    --border: 42 17% 83%;
+    --input: 42 16% 78%;
+    --ring: 160 31% 28%;
+    --radius: 0.5rem;
   }
 
   .dark {
@@ -56,7 +56,8 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    min-width: 320px;
+    font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     font-feature-settings:
@@ -64,8 +65,46 @@
       "calt" 1;
   }
 
+  body::before {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    content: "";
+    background:
+      radial-gradient(circle at 17% 12%, hsl(160 31% 28% / 0.13), transparent 28rem),
+      radial-gradient(circle at 82% 7%, hsl(32 49% 64% / 0.14), transparent 24rem),
+      linear-gradient(135deg, hsl(44 33% 96%) 0%, hsl(43 28% 92%) 100%);
+  }
+
+  body::after {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    content: "";
+    opacity: 0.34;
+    background-image:
+      linear-gradient(hsl(230 12% 11% / 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(230 12% 11% / 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: linear-gradient(to bottom, black, transparent 78%);
+  }
+
   html {
     scroll-behavior: smooth;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  table {
+    font-variant-numeric: tabular-nums;
   }
 
   ::selection {
