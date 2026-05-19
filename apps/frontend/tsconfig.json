@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@realtime-pricing/ui": ["../../packages/ui/src/index.ts"],
+      "@realtime-pricing/ui/*": ["../../packages/ui/src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "postcss.config.js", "tailwind.config.ts"]
+}

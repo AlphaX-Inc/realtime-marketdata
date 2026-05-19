@@ -1,0 +1,31 @@
+{
+  "name": "@realtime-pricing/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @realtime-pricing/db build && tsx watch src/index.ts",
+    "dev:worker": "pnpm --filter @realtime-pricing/db build && tsx watch src/worker/index.ts",
+    "build": "pnpm --filter @realtime-pricing/db build && tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "worker": "node dist/worker/index.js",
+    "typecheck": "pnpm --filter @realtime-pricing/db build && tsc -p tsconfig.json --noEmit",
+    "test": "pnpm --filter @realtime-pricing/db build && vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.6",
+    "@hono/node-ws": "^1.3.1",
+    "@realtime-pricing/db": "workspace:*",
+    "dotenv": "^17.4.2",
+    "hono": "^4.10.7",
+    "ioredis": "^5.10.1",
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.6"
+  }
+}

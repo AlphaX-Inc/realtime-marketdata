@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Product {
+  id        String   @id @default(cuid())
+  name      String
+  sku       String   @unique
+  price     Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  active       Boolean   @default(true)
+  sessions     Session[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ServiceApiKey {
+  id              String    @id @default(cuid())
+  name            String
+  encryptedSecret String
+  active          Boolean   @default(true)
+  lastUsedAt      DateTime?
+  gatewayLogs     GatewayLog[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model GatewayLog {
+  id                String         @id @default(cuid())
+  source            String
+  eventType         String
+  serviceApiKeyId   String?
+  serviceApiKeyName String?
+  symbols           String[]       @default([])
+  message           String
+  metadata          Json           @default("{}")
+  createdAt         DateTime       @default(now())
+  serviceApiKey     ServiceApiKey? @relation(fields: [serviceApiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([eventType])
+  @@index([serviceApiKeyId])
+}

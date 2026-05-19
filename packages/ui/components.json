@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "default",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "../../apps/frontend/tailwind.config.ts",
+    "css": "../../apps/frontend/src/styles.css",
+    "baseColor": "slate",
+    "cssVariables": true
+  },
+  "aliases": {
+    "components": "@realtime-pricing/ui/components",
+    "utils": "@realtime-pricing/ui/lib/utils",
+    "ui": "@realtime-pricing/ui/components",
+    "lib": "@realtime-pricing/ui/lib",
+    "hooks": "@realtime-pricing/ui/hooks"
+  },
+  "iconLibrary": "lucide"
+}

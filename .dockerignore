@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.tanstack
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.git
+.gitignore
+docker-compose.dev.yaml

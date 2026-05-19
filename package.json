@@ -1,0 +1,26 @@
+{
+  "name": "realtime-pricing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @realtime-pricing/api --filter @realtime-pricing/frontend dev",
+    "dev:api": "pnpm --filter @realtime-pricing/api dev",
+    "dev:worker": "pnpm --filter @realtime-pricing/api dev:worker",
+    "dev:frontend": "pnpm --filter @realtime-pricing/frontend dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @realtime-pricing/api test",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "db:generate": "pnpm --filter @realtime-pricing/db db:generate",
+    "db:migrate": "pnpm --filter @realtime-pricing/db db:migrate",
+    "db:deploy": "pnpm --filter @realtime-pricing/db db:deploy",
+    "db:studio": "pnpm --filter @realtime-pricing/db db:studio"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "typescript": "^5.9.3"
+  }
+}
