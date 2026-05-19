@@ -9,6 +9,7 @@
     "dev:api": "pnpm --filter @realtime-pricing/api dev",
     "dev:worker": "pnpm --filter @realtime-pricing/api dev:worker",
     "dev:frontend": "pnpm --filter @realtime-pricing/frontend dev",
+    "consumer:dev": "pnpm --filter @realtime-pricing/consumer dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @realtime-pricing/api test",
