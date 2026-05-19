@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="10" y="10" width="44" height="44" rx="7" fill="#2f5f4d" />
+  <text
+    x="32"
+    y="38"
+    fill="#ffffff"
+    font-family="Inter, Arial, sans-serif"
+    font-size="18"
+    font-weight="800"
+    letter-spacing="0"
+    text-anchor="middle"
+  >AX</text>
+</svg>

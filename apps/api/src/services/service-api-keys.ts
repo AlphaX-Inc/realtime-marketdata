@@ -7,7 +7,8 @@ import {
 } from "node:crypto";
 import { db } from "../db.js";
 
-const keyPrefix = "rtp";
+const keyPrefix = "ax";
+const legacyKeyPrefixes = new Set(["rtp"]);
 const algorithm = "aes-256-gcm";
 
 export type ValidatedServiceApiKey = {
@@ -68,7 +69,7 @@ export function parseServiceApiKey(apiKey: string) {
   const [prefix, id, ...secretParts] = apiKey.split("_");
   const secret = secretParts.join("_");
 
-  if (prefix !== keyPrefix || !id || !secret) {
+  if ((prefix !== keyPrefix && !legacyKeyPrefixes.has(prefix)) || !id || !secret) {
     return null;
   }
 
