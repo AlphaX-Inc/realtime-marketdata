@@ -1,4 +1,10 @@
-import { quoteClosedPollIntervalMs, quotePollIntervalMs, redisUrl } from "../config.js";
+import {
+  jQuantsClosedPollIntervalMs,
+  jQuantsPollIntervalMs,
+  quoteClosedPollIntervalMs,
+  quotePollIntervalMs,
+  redisUrl,
+} from "../config.js";
 import {
   createRedisClient,
   listDesiredSymbols,
@@ -6,12 +12,15 @@ import {
 } from "../market-data/redis-bus.js";
 import { marketDataChannels } from "../market-data/redis-keys.js";
 import { buildSnapshotFromQuote, mergeTickWithQuote } from "../market-data/snapshots.js";
+import { parseMarketSymbol } from "../market-data/symbols.js";
 import type {
   MarketDataCommand,
   TwelveDataPriceEvent,
   TwelveDataQuote,
 } from "../market-data/types.js";
+import { getJapanMarketState } from "../market-hours/japan-market-hours.js";
 import { getUsMarketState } from "../market-hours/us-market-hours.js";
+import { buildJQuantsSnapshot, fetchLatestJQuantsDailyBars } from "../providers/jquants.js";
 import { recordGatewayLog } from "../services/gateway-logs.js";
 import { fetchQuote } from "./twelvedata-quote.js";
 import { TwelveDataWsClient } from "./twelvedata-ws.js";
@@ -30,6 +39,7 @@ export class MarketDataWorker {
   private readonly quoteCache = new Map<string, TwelveDataQuote>();
   private readonly latestTicks = new Map<string, LatestTick>();
   private readonly nextQuotePollAt = new Map<string, number>();
+  private readonly nextJQuantsPollAt = new Map<string, number>();
   private readonly unsubscribeTimers = new Map<string, NodeJS.Timeout>();
   private readonly upstream = new TwelveDataWsClient({
     onPrice: (event) => void this.handlePriceTick(event),
@@ -96,8 +106,14 @@ export class MarketDataWorker {
 
       if (!this.desiredSymbols.has(symbol)) {
         this.desiredSymbols.add(symbol);
-        this.upstream.subscribe([symbol]);
-        this.nextQuotePollAt.set(symbol, 0);
+        const parsed = parseMarketSymbol(symbol);
+
+        if (parsed?.market === "TSE") {
+          this.nextJQuantsPollAt.set(symbol, 0);
+        } else {
+          this.upstream.subscribe([symbol]);
+          this.nextQuotePollAt.set(symbol, 0);
+        }
       }
     }
 
@@ -118,8 +134,12 @@ export class MarketDataWorker {
       this.quoteCache.delete(symbol);
       this.latestTicks.delete(symbol);
       this.nextQuotePollAt.delete(symbol);
+      this.nextJQuantsPollAt.delete(symbol);
       this.unsubscribeTimers.delete(symbol);
-      this.upstream.unsubscribe([symbol]);
+
+      if (parseMarketSymbol(symbol)?.market !== "TSE") {
+        this.upstream.unsubscribe([symbol]);
+      }
     }, unsubscribeGraceMs);
 
     timer.unref();
@@ -160,6 +180,13 @@ export class MarketDataWorker {
 
     await Promise.all(
       Array.from(this.desiredSymbols).map(async (symbol) => {
+        const parsed = parseMarketSymbol(symbol);
+
+        if (parsed?.market === "TSE") {
+          await this.pollJQuantsSymbol(symbol, parsed.jQuantsCode, now);
+          return;
+        }
+
         const nextPollAt = this.nextQuotePollAt.get(symbol) ?? 0;
 
         if (now < nextPollAt) {
@@ -190,5 +217,29 @@ export class MarketDataWorker {
         }
       }),
     );
+  }
+
+  private async pollJQuantsSymbol(symbol: string, code: string, now: number) {
+    const marketState = getJapanMarketState();
+    const interval =
+      marketState === "regular" ? jQuantsPollIntervalMs : jQuantsClosedPollIntervalMs;
+    const nextPollAt = this.nextJQuantsPollAt.get(symbol) ?? 0;
+
+    if (now < nextPollAt) {
+      return;
+    }
+
+    this.nextJQuantsPollAt.set(symbol, now + interval);
+
+    try {
+      const bars = await fetchLatestJQuantsDailyBars(code);
+      const snapshot = buildJQuantsSnapshot(symbol, bars, marketState, { now });
+
+      if (snapshot) {
+        await publishSnapshot(this.redis, snapshot);
+      }
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error);
+    }
   }
 }

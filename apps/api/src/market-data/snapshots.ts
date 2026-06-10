@@ -68,6 +68,7 @@ export function buildSnapshotFromQuote(
         : (options.latestTickTimestamp ?? quote.timestamp ?? Math.floor(now / 1000)),
     marketState,
     source: "quote_api",
+    provider: "twelvedata",
     stale: false,
     receivedAt: now,
   };
@@ -97,6 +98,7 @@ export function mergeTickWithQuote(
     timestamp: tick.timestamp ?? Math.floor(now / 1000),
     marketState,
     source: "websocket",
+    provider: "twelvedata",
     stale: false,
     receivedAt: now,
   };

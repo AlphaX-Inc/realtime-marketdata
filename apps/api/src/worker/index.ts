@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../env.js";
 import { MarketDataWorker } from "./twelvedata-worker.js";
 
 const worker = new MarketDataWorker();
