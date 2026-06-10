@@ -130,7 +130,7 @@ export function createInternalPricesGateway(upgradeWebSocket: UpgradeWebSocket<W
           if (symbols.length === 0) {
             sendJson(ws, {
               type: "error",
-              message: "At least one valid US stock symbol is required",
+              message: "At least one valid market symbol is required",
             } satisfies ErrorMessage);
             return;
           }

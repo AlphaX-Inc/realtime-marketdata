@@ -1,6 +1,13 @@
 export type MarketState = "regular" | "pre" | "post" | "closed";
 
-export type PriceSource = "websocket" | "quote_api" | "redis_cache";
+export type PriceSource =
+  | "websocket"
+  | "quote_api"
+  | "redis_cache"
+  | "jquants_daily"
+  | "alphavantage_daily";
+
+export type PriceProvider = "twelvedata" | "jquants" | "alphavantage";
 
 export type PriceSnapshot = {
   symbol: string;
@@ -16,6 +23,7 @@ export type PriceSnapshot = {
   timestamp: number;
   marketState: MarketState;
   source: PriceSource;
+  provider: PriceProvider;
   stale: boolean;
 };
 
@@ -69,4 +77,33 @@ export type TwelveDataQuote = {
   extended_change?: string;
   extended_percent_change?: string;
   extended_timestamp?: number;
+};
+
+export type DailyOhlcBar = {
+  date: string;
+  open: string | null;
+  high: string | null;
+  low: string | null;
+  close: string | null;
+  volume: string | null;
+  adjustedOpen?: string | null;
+  adjustedHigh?: string | null;
+  adjustedLow?: string | null;
+  adjustedClose?: string | null;
+  adjustedVolume?: string | null;
+};
+
+export type DailyOhlcResponse = {
+  symbol: string;
+  market: "US" | "TSE";
+  provider: PriceProvider;
+  bars: DailyOhlcBar[];
+};
+
+export type OptionsResponse = {
+  market: "US" | "JP";
+  provider: PriceProvider;
+  symbol: string;
+  date: string;
+  contracts: Record<string, string | number | null>[];
 };

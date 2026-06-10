@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./env.js";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
@@ -6,6 +6,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { authRoutes } from "./auth/routes.js";
 import { dashboardRoutes } from "./dashboard/routes.js";
+import { marketDataRoutes } from "./market-data/routes.js";
 import { recordGatewayLog } from "./services/gateway-logs.js";
 import { type ValidatedServiceApiKey, validateServiceApiKey } from "./services/service-api-keys.js";
 import { createInternalPricesGateway } from "./ws/internal-prices.js";
@@ -45,6 +46,7 @@ app.get("/health", (c) => {
 const pricesGateway = createInternalPricesGateway(upgradeWebSocket);
 
 app.route("/auth", authRoutes);
+app.route("/", marketDataRoutes);
 
 app.get(
   "/ws/prices",

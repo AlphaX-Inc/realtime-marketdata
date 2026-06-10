@@ -50,7 +50,25 @@ The frontend dev server and production nginx also proxy it at `ws://localhost:30
 Send:
 
 ```json
-{ "type": "subscribe", "symbols": ["AAPL", "MSFT"] }
+{ "type": "subscribe", "symbols": ["AAPL", "MSFT", "TSE:7203"] }
+```
+
+US symbols use the Twelve Data WebSocket path. TSE symbols are normalized onto the same
+`/ws/prices` response shape by polling J-Quants REST only while those symbols are subscribed.
+Accepted TSE formats are `TSE:7203`, `7203.T`, and `72030.T`.
+
+Historical bars and option chains are exposed as flat REST endpoints using the same service API key
+authentication:
+
+```sh
+curl -H "x-api-key: <api-key>" \
+  "http://localhost:8000/daily-ohlc?symbol=TSE:7203&from=2025-12-01&to=2025-12-05"
+
+curl -H "x-api-key: <api-key>" \
+  "http://localhost:8000/options?market=JP&symbol=2914&date=2025-12-01"
+
+curl -H "x-api-key: <api-key>" \
+  "http://localhost:8000/options?market=US&symbol=IBM&date=2017-11-15"
 ```
 
 Run the worker separately so it owns the single Twelve Data upstream connection:
@@ -86,6 +104,8 @@ Required production environment:
 ```sh
 API_KEY_ENCRYPTION_SECRET="base64-encoded-32-byte-key"
 TWELVEDATA_API_KEY="your-twelve-data-key"
+JQUANTS_API_KEY="your-jquants-key"
+ALPHAVANTAGE_API_KEY="your-alpha-vantage-key"
 ```
 
 Optional overrides:
