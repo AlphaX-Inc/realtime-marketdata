@@ -27,17 +27,53 @@ const tabs = [
 ] as const satisfies readonly [DocsTab, string][];
 
 const snapshotFields = [
-  ["symbol", "Canonical symbol returned by the gateway, for example AAPL or TSE:7203."],
-  ["price", "Primary display price selected by the gateway."],
-  ["open, high, low, close", "OHLC fields from the latest quote or daily bar."],
-  ["previousClose", "Previous close when enough upstream data is available."],
-  ["change, percentChange", "Computed or upstream-provided change values."],
-  ["volume", "Quote or daily bar volume when available."],
-  ["timestamp", "Unix timestamp for the selected source data."],
-  ["marketState", "pre, regular, post, or closed."],
-  ["source", "websocket, quote_api, jquants_daily, alphavantage_daily, or redis_cache."],
-  ["provider", "twelvedata, jquants, or alphavantage."],
-  ["stale", "true when an immediate cached snapshot is older than the stale window."],
+  [
+    "symbol",
+    "Canonical symbol returned by the gateway, for example AAPL or TSE:7203.",
+    "Gateway symbol parser",
+  ],
+  [
+    "price",
+    "Primary display price selected by the gateway.",
+    "US regular: Twelve Data WebSocket tick. US pre/post/closed: Twelve Data extended_price if the Quote API response includes it; otherwise close, then previous_close. TSE: J-Quants adjusted daily close.",
+  ],
+  [
+    "open, high, low, close",
+    "OHLC fields from the latest quote or daily bar. close remains the official regular-session close.",
+    "Twelve Data Quote API or J-Quants daily bars",
+  ],
+  [
+    "previousClose",
+    "Previous close. Null if the selected upstream response does not include a previous close or enough daily bars to derive one.",
+    "Twelve Data Quote API or previous J-Quants daily bar",
+  ],
+  [
+    "change, percentChange",
+    "Computed or upstream-provided change values.",
+    "Twelve Data quote / extended fields or gateway calculation for J-Quants",
+  ],
+  [
+    "volume",
+    "Quote or daily bar volume. Null if the selected upstream response does not include volume.",
+    "Twelve Data Quote API or J-Quants daily bars",
+  ],
+  [
+    "timestamp",
+    "Unix timestamp for the selected source data.",
+    "Selected upstream tick, quote, or bar",
+  ],
+  ["marketState", "pre, regular, post, or closed.", "Gateway market-hours calendar"],
+  [
+    "source",
+    "websocket, quote_api, jquants_daily, alphavantage_daily, or redis_cache.",
+    "Gateway routing metadata",
+  ],
+  ["provider", "twelvedata, jquants, or alphavantage.", "Upstream provider metadata"],
+  [
+    "stale",
+    "true when an immediate cached snapshot is older than the stale window.",
+    "Gateway Redis cache age",
+  ],
 ] as const;
 
 function DocsPage() {
@@ -217,6 +253,64 @@ function DocsPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle>Price source behavior</CardTitle>
+            <CardDescription>
+              `/ws/prices` normalizes multiple upstreams into one payload shape.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-hidden rounded-lg border border-border/70 bg-card/80">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-secondary/70 text-zinc-600">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Market</th>
+                    <th className="px-4 py-3 font-medium">Session</th>
+                    <th className="px-4 py-3 font-medium">Provider / source</th>
+                    <th className="px-4 py-3 font-medium">Price rule</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/70">
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-zinc-950">US</td>
+                    <td className="px-4 py-3 font-mono text-xs">regular</td>
+                    <td className="px-4 py-3">Twelve Data WebSocket</td>
+                    <td className="px-4 py-3">
+                      <code>price</code> follows realtime WebSocket ticks. Quote fields are used as
+                      supporting metadata if the latest Quote API response includes them.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-zinc-950">US</td>
+                    <td className="px-4 py-3 font-mono text-xs">pre / post / closed</td>
+                    <td className="px-4 py-3">Twelve Data Quote REST polling</td>
+                    <td className="px-4 py-3">
+                      <code>price</code> uses <code>extended_price</code> when Twelve Data returns
+                      it, then falls back to <code>close</code> or <code>previousClose</code>.{" "}
+                      <code>close</code> stays the official regular-session close.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-zinc-950">TSE</td>
+                    <td className="px-4 py-3 font-mono text-xs">all sessions</td>
+                    <td className="px-4 py-3">J-Quants daily REST polling</td>
+                    <td className="px-4 py-3">
+                      <code>price</code> uses the latest adjusted daily close from J-Quants.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-zinc-700">
+              Closed-market polling does not mean overnight venue coverage. Twelve Data
+              pre/post-market data may stop updating after the post-market session ends around 8:00
+              PM ET. Yahoo Finance overnight prices can come from BOATS / Blue Ocean ATS, which is a
+              separate 8:00 PM-4:00 AM ET feed and is not currently part of this gateway.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Daily OHLC</CardTitle>
             <CardDescription>
               Use REST when you need a date range instead of latest snapshots.
@@ -294,18 +388,22 @@ x-api-key: <api-key>`}</code>
           </CardHeader>
           <CardContent>
             <div className="overflow-hidden rounded-lg border border-border/70 bg-card/80">
-              <table className="w-full text-left text-sm">
+              <table className="min-w-[980px] w-full text-left text-sm">
                 <thead className="bg-secondary/70 text-zinc-600">
                   <tr>
                     <th className="px-4 py-3 font-medium">Field</th>
                     <th className="px-4 py-3 font-medium">Meaning</th>
+                    <th className="px-4 py-3 font-medium">Data source</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/70">
-                  {snapshotFields.map(([field, meaning]) => (
+                  {snapshotFields.map(([field, meaning, dataSource]) => (
                     <tr key={field}>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{field}</td>
-                      <td className="px-4 py-3">{meaning}</td>
+                      <td className="whitespace-nowrap px-4 py-3 align-top font-mono text-xs">
+                        {field}
+                      </td>
+                      <td className="px-4 py-3 align-top">{meaning}</td>
+                      <td className="px-4 py-3 align-top">{dataSource}</td>
                     </tr>
                   ))}
                 </tbody>
