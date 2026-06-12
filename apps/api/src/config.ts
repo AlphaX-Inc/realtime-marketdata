@@ -2,7 +2,7 @@ export const redisUrl = process.env.REDIS_URL ?? "redis://localhost:56379";
 
 export const quotePollIntervalMs = Number(process.env.QUOTE_POLL_INTERVAL_MS ?? 30_000);
 export const quoteClosedPollIntervalMs = Number(
-  process.env.QUOTE_CLOSED_POLL_INTERVAL_MS ?? 300_000,
+  process.env.QUOTE_CLOSED_POLL_INTERVAL_MS ?? 60_000,
 );
 export const staleAfterMs = Number(process.env.STALE_AFTER_MS ?? 5_000);
 

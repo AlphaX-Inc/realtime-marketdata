@@ -32,14 +32,15 @@ export function buildSnapshotFromQuote(
 ): CachedPriceSnapshot | null {
   const now = options.now ?? Date.now();
   const regularPrice = options.latestTickPrice ?? quote.close;
-  const extendedPrice = quote.extended_price ?? quote.close;
-  const closedPrice = quote.close ?? quote.previous_close;
-  const price =
+  const usesExtendedPrice = marketState !== "regular" && Boolean(quote.extended_price);
+  const nonRegularPrice = quote.extended_price ?? quote.close ?? quote.previous_close;
+  const price = marketState === "regular" ? regularPrice : nonRegularPrice;
+  const timestamp =
     marketState === "regular"
-      ? regularPrice
-      : marketState === "pre" || marketState === "post"
-        ? extendedPrice
-        : closedPrice;
+      ? (options.latestTickTimestamp ?? quote.timestamp ?? Math.floor(now / 1000))
+      : usesExtendedPrice
+        ? (quote.extended_timestamp ?? quote.timestamp ?? Math.floor(now / 1000))
+        : (quote.timestamp ?? Math.floor(now / 1000));
 
   if (!price) {
     return null;
@@ -53,19 +54,14 @@ export function buildSnapshotFromQuote(
     low: quote.low ?? null,
     close: quote.close ?? null,
     previousClose: quote.previous_close ?? null,
-    change:
-      marketState === "pre" || marketState === "post"
-        ? (quote.extended_change ?? quote.change ?? null)
-        : (quote.change ?? null),
-    percentChange:
-      marketState === "pre" || marketState === "post"
-        ? (quote.extended_percent_change ?? quote.percent_change ?? null)
-        : (quote.percent_change ?? null),
+    change: usesExtendedPrice
+      ? (quote.extended_change ?? quote.change ?? null)
+      : (quote.change ?? null),
+    percentChange: usesExtendedPrice
+      ? (quote.extended_percent_change ?? quote.percent_change ?? null)
+      : (quote.percent_change ?? null),
     volume: quote.volume ?? null,
-    timestamp:
-      marketState === "pre" || marketState === "post"
-        ? (quote.extended_timestamp ?? quote.timestamp ?? Math.floor(now / 1000))
-        : (options.latestTickTimestamp ?? quote.timestamp ?? Math.floor(now / 1000)),
+    timestamp,
     marketState,
     source: "quote_api",
     provider: "twelvedata",
