@@ -1,4 +1,12 @@
-import { BookOpenText, Broadcast, Clock, Key, SignOut, UsersThree } from "@phosphor-icons/react";
+import {
+  BookOpenText,
+  Broadcast,
+  Clock,
+  Flask,
+  Key,
+  SignOut,
+  UsersThree,
+} from "@phosphor-icons/react";
 import { Button } from "@realtime-pricing/ui/components/button";
 import {
   Sidebar,
@@ -33,6 +41,11 @@ const navItems = [
     to: "/dashboard/docs",
     label: "Docs",
     icon: BookOpenText,
+  },
+  {
+    to: "/dashboard/tests",
+    label: "Tests",
+    icon: Flask,
   },
   {
     to: "/dashboard/logs",

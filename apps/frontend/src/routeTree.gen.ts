@@ -9,16 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TestsRouteImport } from './routes/tests'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
+import { Route as DashboardTestsRouteImport } from './routes/dashboard.tests'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
 import { Route as DashboardDocsRouteImport } from './routes/dashboard.docs'
 import { Route as DashboardApiKeysRouteImport } from './routes/dashboard.api-keys'
 
+const TestsRoute = TestsRouteImport.update({
+  id: '/tests',
+  path: '/tests',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -49,6 +56,11 @@ const DashboardUsersRoute = DashboardUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardTestsRoute = DashboardTestsRouteImport.update({
+  id: '/tests',
+  path: '/tests',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardLogsRoute = DashboardLogsRouteImport.update({
   id: '/logs',
   path: '/logs',
@@ -70,9 +82,11 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/tests': typeof TestsRoute
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/tests': typeof DashboardTestsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
@@ -80,9 +94,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/tests': typeof TestsRoute
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/tests': typeof DashboardTestsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard': typeof DashboardIndexRoute
 }
@@ -92,9 +108,11 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/tests': typeof TestsRoute
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/tests': typeof DashboardTestsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
@@ -105,9 +123,11 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/register'
+    | '/tests'
     | '/dashboard/api-keys'
     | '/dashboard/docs'
     | '/dashboard/logs'
+    | '/dashboard/tests'
     | '/dashboard/users'
     | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
@@ -115,9 +135,11 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/register'
+    | '/tests'
     | '/dashboard/api-keys'
     | '/dashboard/docs'
     | '/dashboard/logs'
+    | '/dashboard/tests'
     | '/dashboard/users'
     | '/dashboard'
   id:
@@ -126,9 +148,11 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/register'
+    | '/tests'
     | '/dashboard/api-keys'
     | '/dashboard/docs'
     | '/dashboard/logs'
+    | '/dashboard/tests'
     | '/dashboard/users'
     | '/dashboard/'
   fileRoutesById: FileRoutesById
@@ -138,10 +162,18 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRouteWithChildren
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  TestsRoute: typeof TestsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/tests': {
+      id: '/tests'
+      path: '/tests'
+      fullPath: '/tests'
+      preLoaderRoute: typeof TestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -184,6 +216,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardUsersRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/tests': {
+      id: '/dashboard/tests'
+      path: '/tests'
+      fullPath: '/dashboard/tests'
+      preLoaderRoute: typeof DashboardTestsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/logs': {
       id: '/dashboard/logs'
       path: '/logs'
@@ -212,6 +251,7 @@ interface DashboardRouteChildren {
   DashboardApiKeysRoute: typeof DashboardApiKeysRoute
   DashboardDocsRoute: typeof DashboardDocsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
+  DashboardTestsRoute: typeof DashboardTestsRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
 }
@@ -220,6 +260,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardApiKeysRoute: DashboardApiKeysRoute,
   DashboardDocsRoute: DashboardDocsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
+  DashboardTestsRoute: DashboardTestsRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardIndexRoute: DashboardIndexRoute,
 }
@@ -233,6 +274,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRouteWithChildren,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  TestsRoute: TestsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -27,4 +27,12 @@ if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prismaPool = pool;
 }
 
-export type { GatewayLog, Prisma, ServiceApiKey, Session, User } from "@prisma/client";
+export type {
+  DailyOhlcBar,
+  GatewayLog,
+  OptionContractDaily,
+  Prisma,
+  ServiceApiKey,
+  Session,
+  User,
+} from "@prisma/client";
