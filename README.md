@@ -57,10 +57,15 @@ US symbols use the Twelve Data WebSocket path. TSE symbols are normalized onto t
 `/ws/prices` response shape by polling J-Quants REST only while those symbols are subscribed.
 Accepted TSE formats are `TSE:7203`, `7203.T`, and `72030.T`.
 
-Historical bars and option chains are exposed as flat REST endpoints using the same service API key
-authentication:
+Historical bars and option chains are exposed as REST endpoints using the same service API key
+authentication. `/ohlc` is the preferred cached multi-symbol endpoint. Missing symbols are
+backfilled from January 1, 2025, then served from Postgres on later requests. `/daily-ohlc` remains
+available for single-symbol compatibility.
 
 ```sh
+curl -H "x-api-key: <api-key>" \
+  "http://localhost:8000/ohlc?symbols=AAPL,NVDA,TSE:7203&from=2025-12-01&to=2025-12-05"
+
 curl -H "x-api-key: <api-key>" \
   "http://localhost:8000/daily-ohlc?symbol=TSE:7203&from=2025-12-01&to=2025-12-05"
 
@@ -70,6 +75,8 @@ curl -H "x-api-key: <api-key>" \
 curl -H "x-api-key: <api-key>" \
   "http://localhost:8000/options?market=US&symbol=IBM&date=2017-11-15"
 ```
+
+US and JP options responses are cached by market, symbol, date, and contract ID.
 
 Run the worker separately so it owns the single Twelve Data upstream connection:
 

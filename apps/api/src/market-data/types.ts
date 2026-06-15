@@ -100,6 +100,12 @@ export type DailyOhlcResponse = {
   bars: DailyOhlcBar[];
 };
 
+export type MultiSymbolDailyOhlcResponse = {
+  from: string;
+  to: string;
+  results: DailyOhlcResponse[];
+};
+
 export type OptionsResponse = {
   market: "US" | "JP";
   provider: PriceProvider;

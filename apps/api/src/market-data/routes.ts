@@ -1,14 +1,9 @@
 import { Hono } from "hono";
-import { fetchAlphaVantageDailyBars, fetchAlphaVantageOptions } from "../providers/alphavantage.js";
-import {
-  fetchJQuantsDailyBars,
-  fetchJQuantsOptions,
-  normalizeJQuantsDailyBars,
-} from "../providers/jquants.js";
 import { recordGatewayLog } from "../services/gateway-logs.js";
 import { validateServiceApiKey } from "../services/service-api-keys.js";
+import { getCachedDailyOhlc, getCachedOptions } from "./historical-cache.js";
 import { parseMarketSymbol } from "./symbols.js";
-import type { DailyOhlcResponse } from "./types.js";
+import type { MultiSymbolDailyOhlcResponse } from "./types.js";
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -27,6 +22,26 @@ function serializeError(error: unknown) {
 }
 
 export const marketDataRoutes = new Hono();
+
+marketDataRoutes.use("/ohlc", async (c, next) => {
+  const apiKey = c.req.header("x-api-key") ?? c.req.query("api_key");
+  const serviceApiKey = apiKey ? await validateServiceApiKey(apiKey) : null;
+
+  if (!serviceApiKey) {
+    recordGatewayLog({
+      source: "downstream",
+      eventType: "auth_failed",
+      message: "Rejected market data request with invalid API key",
+      metadata: {
+        hasApiKey: Boolean(apiKey),
+        path: c.req.path,
+      },
+    });
+    return c.json({ message: "Invalid API key" }, 401);
+  }
+
+  return next();
+});
 
 marketDataRoutes.use("/daily-ohlc", async (c, next) => {
   const apiKey = c.req.header("x-api-key") ?? c.req.query("api_key");
@@ -68,6 +83,73 @@ marketDataRoutes.use("/options", async (c, next) => {
   return next();
 });
 
+marketDataRoutes.get("/ohlc", async (c) => {
+  const symbols = c.req.query("symbols");
+  const from = c.req.query("from");
+  const to = c.req.query("to");
+
+  if (!symbols || !from || !to || !isDate(from) || !isDate(to)) {
+    return c.json({ message: "symbols, from, and to=YYYY-MM-DD are required" }, 400);
+  }
+
+  if (from > to) {
+    return c.json({ message: "from must be before or equal to to" }, 400);
+  }
+
+  const requestedSymbols = symbols
+    .split(",")
+    .map((symbol) => symbol.trim())
+    .filter(Boolean);
+
+  if (requestedSymbols.length === 0) {
+    return c.json({ message: "At least one symbol is required" }, 400);
+  }
+
+  const parsedSymbols = requestedSymbols.map((symbol) => ({
+    raw: symbol,
+    parsed: parseMarketSymbol(symbol),
+  }));
+  const unsupportedSymbol = parsedSymbols.find((item) => !item.parsed);
+
+  if (unsupportedSymbol) {
+    return c.json({ message: `Unsupported symbol: ${unsupportedSymbol.raw}` }, 400);
+  }
+
+  const dedupedSymbols = Array.from(
+    new Map(
+      parsedSymbols.map((item) => {
+        if (!item.parsed) {
+          throw new Error("Unexpected unsupported symbol");
+        }
+
+        return [item.parsed.canonical, item.parsed];
+      }),
+    ).values(),
+  );
+
+  try {
+    const results = await Promise.all(
+      dedupedSymbols.map((parsed) =>
+        getCachedDailyOhlc({
+          parsed,
+          from,
+          to,
+        }),
+      ),
+    );
+
+    const response: MultiSymbolDailyOhlcResponse = {
+      from,
+      to,
+      results,
+    };
+
+    return c.json(response);
+  } catch (error) {
+    return c.json({ message: serializeError(error) }, 502);
+  }
+});
+
 marketDataRoutes.get("/daily-ohlc", async (c) => {
   const symbol = c.req.query("symbol");
   const from = c.req.query("from");
@@ -88,34 +170,13 @@ marketDataRoutes.get("/daily-ohlc", async (c) => {
   }
 
   try {
-    if (parsed.market === "TSE") {
-      const bars = await fetchJQuantsDailyBars({
-        code: parsed.jQuantsCode,
-        from,
-        to,
-      });
-      const response: DailyOhlcResponse = {
-        symbol: parsed.canonical,
-        market: "TSE",
-        provider: "jquants",
-        bars: normalizeJQuantsDailyBars(bars),
-      };
-
-      return c.json(response);
-    }
-
-    const response: DailyOhlcResponse = {
-      symbol: parsed.canonical,
-      market: "US",
-      provider: "alphavantage",
-      bars: await fetchAlphaVantageDailyBars({
-        symbol: parsed.upstreamSymbol,
+    return c.json(
+      await getCachedDailyOhlc({
+        parsed,
         from,
         to,
       }),
-    };
-
-    return c.json(response);
+    );
   } catch (error) {
     return c.json({ message: serializeError(error) }, 502);
   }
@@ -134,18 +195,9 @@ marketDataRoutes.get("/options", async (c) => {
   const requestedDate = date;
 
   try {
-    if (market === "JP") {
-      return c.json(
-        await fetchJQuantsOptions({
-          symbol,
-          date: requestedDate,
-          contract,
-        }),
-      );
-    }
-
     return c.json(
-      await fetchAlphaVantageOptions({
+      await getCachedOptions({
+        market,
         symbol,
         date: requestedDate,
         contract,

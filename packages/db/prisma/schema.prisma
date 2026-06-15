@@ -56,3 +56,42 @@ model GatewayLog {
   @@index([eventType])
   @@index([serviceApiKeyId])
 }
+
+model DailyOhlcBar {
+  id             String   @id @default(cuid())
+  symbol         String
+  market         String
+  provider       String
+  date           DateTime @db.Date
+  open           String?
+  high           String?
+  low            String?
+  close          String?
+  volume         String?
+  adjustedOpen   String?
+  adjustedHigh   String?
+  adjustedLow    String?
+  adjustedClose  String?
+  adjustedVolume String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([symbol, date])
+  @@index([symbol, date])
+  @@index([market, date])
+}
+
+model OptionContractDaily {
+  id         String   @id @default(cuid())
+  market     String
+  provider   String
+  symbol     String
+  date       DateTime @db.Date
+  contractId String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([market, symbol, date, contractId])
+  @@index([market, symbol, date])
+}

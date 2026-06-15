@@ -1,5 +1,7 @@
 export type {
+  DailyOhlcBar,
   GatewayLog,
+  OptionContractDaily,
   Prisma,
   ServiceApiKey,
   Session,

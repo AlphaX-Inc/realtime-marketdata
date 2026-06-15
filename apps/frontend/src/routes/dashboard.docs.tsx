@@ -136,13 +136,17 @@ function DocsPage() {
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-zinc-950">Historical OHLC</td>
-                    <td className="px-4 py-3 font-mono text-xs">/daily-ohlc</td>
-                    <td className="px-4 py-3">REST date-range query for US and TSE symbols.</td>
+                    <td className="px-4 py-3 font-mono text-xs">/ohlc</td>
+                    <td className="px-4 py-3">
+                      Cached REST date-range query for one or more US and TSE symbols.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-zinc-950">Options chains</td>
                     <td className="px-4 py-3 font-mono text-xs">/options</td>
-                    <td className="px-4 py-3">REST query for US Alpha Vantage or JP J-Quants.</td>
+                    <td className="px-4 py-3">
+                      Cached REST query for US Alpha Vantage and JP J-Quants option chains.
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -313,10 +317,43 @@ function DocsPage() {
           <CardHeader>
             <CardTitle>Daily OHLC</CardTitle>
             <CardDescription>
-              Use REST when you need a date range instead of latest snapshots.
+              Use `/ohlc` for cached multi-symbol ranges. `/daily-ohlc` remains available for
+              single-symbol compatibility.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
+            <CodeBlock>
+              <code>{`GET /ohlc?symbols=AAPL,NVDA,TSE:7203&from=2025-12-01&to=2025-12-05
+x-api-key: <api-key>`}</code>
+            </CodeBlock>
+            <CodeBlock>
+              <code>{`{
+  "from": "2025-12-01",
+  "to": "2025-12-05",
+  "results": [
+    {
+      "symbol": "TSE:7203",
+      "market": "TSE",
+      "provider": "jquants",
+      "bars": [
+        {
+          "date": "2025-12-01",
+          "open": "3132",
+          "high": "3133",
+          "low": "3075",
+          "close": "3082",
+          "volume": "13231700",
+          "adjustedOpen": "3132",
+          "adjustedHigh": "3133",
+          "adjustedLow": "3075",
+          "adjustedClose": "3082",
+          "adjustedVolume": "13231700"
+        }
+      ]
+    }
+  ]
+}`}</code>
+            </CodeBlock>
             <CodeBlock>
               <code>{`GET /daily-ohlc?symbol=TSE:7203&from=2025-12-01&to=2025-12-05
 x-api-key: <api-key>`}</code>
@@ -350,7 +387,8 @@ x-api-key: <api-key>`}</code>
           <CardHeader>
             <CardTitle>Options</CardTitle>
             <CardDescription>
-              Options are REST-only. Do not subscribe to option chains over `/ws/prices`.
+              Options are REST-only. US and JP options are cached by market, symbol, date, and
+              contract ID.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
