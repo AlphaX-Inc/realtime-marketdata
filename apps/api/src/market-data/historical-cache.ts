@@ -48,11 +48,19 @@ function addDaysToDateString(date: string, days: number) {
 
 function toDailyOhlcBar(row: DailyOhlcRow): DailyOhlcBar {
   const hasManualAdjustment = Boolean(row.manualAdjustedAt);
-  const open = row.manualAdjustedOpen ?? row.open;
-  const high = row.manualAdjustedHigh ?? row.high;
-  const low = row.manualAdjustedLow ?? row.low;
-  const close = row.manualAdjustedClose ?? row.close;
-  const volume = row.manualAdjustedVolume ?? row.volume;
+  const hasProviderAdjustedOhlc =
+    row.adjustedOpen !== null &&
+    row.adjustedHigh !== null &&
+    row.adjustedLow !== null &&
+    row.adjustedClose !== null &&
+    row.adjustedVolume !== null;
+  const open = row.manualAdjustedOpen ?? (hasProviderAdjustedOhlc ? row.adjustedOpen : row.open);
+  const high = row.manualAdjustedHigh ?? (hasProviderAdjustedOhlc ? row.adjustedHigh : row.high);
+  const low = row.manualAdjustedLow ?? (hasProviderAdjustedOhlc ? row.adjustedLow : row.low);
+  const close = row.manualAdjustedClose ?? (hasProviderAdjustedOhlc ? row.adjustedClose : row.close);
+  const volume =
+    row.manualAdjustedVolume ?? (hasProviderAdjustedOhlc ? row.adjustedVolume : row.volume);
+  const hasEffectiveAdjustment = hasManualAdjustment || hasProviderAdjustedOhlc;
 
   return {
     date: toDateString(row.date),
@@ -61,11 +69,11 @@ function toDailyOhlcBar(row: DailyOhlcRow): DailyOhlcBar {
     low,
     close,
     volume,
-    adjustedOpen: hasManualAdjustment ? open : row.adjustedOpen,
-    adjustedHigh: hasManualAdjustment ? high : row.adjustedHigh,
-    adjustedLow: hasManualAdjustment ? low : row.adjustedLow,
-    adjustedClose: hasManualAdjustment ? close : row.adjustedClose,
-    adjustedVolume: hasManualAdjustment ? volume : row.adjustedVolume,
+    adjustedOpen: hasEffectiveAdjustment ? open : row.adjustedOpen,
+    adjustedHigh: hasEffectiveAdjustment ? high : row.adjustedHigh,
+    adjustedLow: hasEffectiveAdjustment ? low : row.adjustedLow,
+    adjustedClose: hasEffectiveAdjustment ? close : row.adjustedClose,
+    adjustedVolume: hasEffectiveAdjustment ? volume : row.adjustedVolume,
   };
 }
 

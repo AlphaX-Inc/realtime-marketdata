@@ -69,6 +69,49 @@ async function fetchAlphaVantage<T>(params: Record<string, string | undefined>) 
   return json;
 }
 
+function toNumber(value: string | undefined) {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function formatNumber(value: number) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const fixed = value.toFixed(10);
+  const trimmed = fixed.replace(/\.?0+$/, "");
+
+  return trimmed === "-0" ? "0" : trimmed;
+}
+
+function adjustPrice(value: string | undefined, factor: number) {
+  const numeric = toNumber(value);
+
+  if (numeric === null) {
+    return value ?? null;
+  }
+
+  return formatNumber(numeric / factor);
+}
+
+function adjustVolume(value: string | undefined, factor: number) {
+  const numeric = toNumber(value);
+
+  if (numeric === null) {
+    return value ?? null;
+  }
+
+  return formatNumber(numeric * factor);
+}
+
+function getSplitCoefficient(value: string | undefined) {
+  const numeric = toNumber(value);
+
+  return numeric && numeric > 0 ? numeric : 1;
+}
+
 export async function fetchAlphaVantageDailyBars(input: {
   symbol: string;
   from: string;
@@ -80,25 +123,31 @@ export async function fetchAlphaVantageDailyBars(input: {
     outputsize: "full",
   });
   const series = json["Time Series (Daily)"] ?? {};
+  const adjustedBars: DailyOhlcBar[] = [];
+  let cumulativeSplitFactor = 1;
 
-  return Object.entries(series)
-    .filter(([date]) => date >= input.from && date <= input.to)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(
-      ([date, bar]): DailyOhlcBar => ({
-        date,
-        open: bar["1. open"] ?? null,
-        high: bar["2. high"] ?? null,
-        low: bar["3. low"] ?? null,
-        close: bar["4. close"] ?? null,
-        volume: bar["6. volume"] ?? null,
-        adjustedOpen: null,
-        adjustedHigh: null,
-        adjustedLow: null,
-        adjustedClose: bar["5. adjusted close"] ?? null,
-        adjustedVolume: bar["6. volume"] ?? null,
-      }),
-    );
+  // Walk newest to oldest so a split date adjusts only prior historical rows.
+  for (const [date, bar] of Object.entries(series).sort(([a], [b]) => b.localeCompare(a))) {
+    adjustedBars.push({
+      date,
+      open: bar["1. open"] ?? null,
+      high: bar["2. high"] ?? null,
+      low: bar["3. low"] ?? null,
+      close: bar["4. close"] ?? null,
+      volume: bar["6. volume"] ?? null,
+      adjustedOpen: adjustPrice(bar["1. open"], cumulativeSplitFactor),
+      adjustedHigh: adjustPrice(bar["2. high"], cumulativeSplitFactor),
+      adjustedLow: adjustPrice(bar["3. low"], cumulativeSplitFactor),
+      adjustedClose: adjustPrice(bar["4. close"], cumulativeSplitFactor),
+      adjustedVolume: adjustVolume(bar["6. volume"], cumulativeSplitFactor),
+    });
+
+    cumulativeSplitFactor *= getSplitCoefficient(bar["8. split coefficient"]);
+  }
+
+  return adjustedBars
+    .filter((bar) => bar.date >= input.from && bar.date <= input.to)
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export async function fetchAlphaVantageOptions(input: {

@@ -20,6 +20,7 @@ describe("Alpha Vantage client", () => {
               "4. close": "100",
               "5. adjusted close": "98",
               "6. volume": "123",
+              "8. split coefficient": "10",
             },
             "2025-12-01": {
               "1. open": "91",
@@ -28,6 +29,7 @@ describe("Alpha Vantage client", () => {
               "4. close": "90",
               "5. adjusted close": "88",
               "6. volume": "456",
+              "8. split coefficient": "1",
             },
           },
         }),
@@ -39,10 +41,23 @@ describe("Alpha Vantage client", () => {
     await expect(
       fetchAlphaVantageDailyBars({
         symbol: "IBM",
-        from: "2025-12-02",
+        from: "2025-12-01",
         to: "2025-12-02",
       }),
     ).resolves.toEqual([
+      {
+        date: "2025-12-01",
+        open: "91",
+        high: "92",
+        low: "89",
+        close: "90",
+        volume: "456",
+        adjustedOpen: "9.1",
+        adjustedHigh: "9.2",
+        adjustedLow: "8.9",
+        adjustedClose: "9",
+        adjustedVolume: "4560",
+      },
       {
         date: "2025-12-02",
         open: "101",
@@ -50,10 +65,10 @@ describe("Alpha Vantage client", () => {
         low: "99",
         close: "100",
         volume: "123",
-        adjustedOpen: null,
-        adjustedHigh: null,
-        adjustedLow: null,
-        adjustedClose: "98",
+        adjustedOpen: "101",
+        adjustedHigh: "102",
+        adjustedLow: "99",
+        adjustedClose: "100",
         adjustedVolume: "123",
       },
     ]);
