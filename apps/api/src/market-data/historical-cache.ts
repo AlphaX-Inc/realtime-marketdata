@@ -83,7 +83,20 @@ async function shouldBackfillDailyOhlc(symbol: string, to: string) {
     },
   });
 
-  return !latest || toDateString(latest.date) < to;
+  if (latest && toDateString(latest.date) >= to) {
+    return false;
+  }
+
+  const status = await db.dailyOhlcBackfillStatus.findUnique({
+    where: {
+      symbol,
+    },
+    select: {
+      backfilledThrough: true,
+    },
+  });
+
+  return !status || toDateString(status.backfilledThrough) < to;
 }
 
 async function upsertDailyOhlcBars(input: {
@@ -159,6 +172,23 @@ export async function backfillDailyOhlc(input: { parsed: ParsedMarketSymbol; to:
       parsed: input.parsed,
       provider,
       bars,
+    });
+
+    await db.dailyOhlcBackfillStatus.upsert({
+      where: {
+        symbol: input.parsed.canonical,
+      },
+      create: {
+        symbol: input.parsed.canonical,
+        market: input.parsed.market,
+        provider,
+        backfilledThrough: toDbDate(input.to),
+      },
+      update: {
+        market: input.parsed.market,
+        provider,
+        backfilledThrough: toDbDate(input.to),
+      },
     });
   } catch (error) {
     recordGatewayLog({
