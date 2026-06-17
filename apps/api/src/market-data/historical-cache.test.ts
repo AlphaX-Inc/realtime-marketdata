@@ -232,6 +232,52 @@ describe("historical market data cache", () => {
     expect(dbMocks.db.dailyOhlcBackfillStatus.upsert).not.toHaveBeenCalled();
   });
 
+  it("only fetches dates after the previous backfill watermark", async () => {
+    dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
+      date: new Date("2026-06-17T00:00:00.000Z"),
+    });
+    dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue({
+      backfilledThrough: new Date("2026-06-17T00:00:00.000Z"),
+    });
+    alphaMocks.fetchAlphaVantageDailyBars.mockResolvedValue([
+      {
+        date: "2026-06-18",
+        open: "101",
+        high: "102",
+        low: "100",
+        close: "101",
+        volume: "11",
+      },
+    ]);
+    dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([]);
+
+    const { getCachedDailyOhlc } = await import("./historical-cache.js");
+    await getCachedDailyOhlc({
+      parsed: {
+        market: "US",
+        canonical: "AAPL",
+        upstreamSymbol: "AAPL",
+      },
+      from: "2026-06-01",
+      to: "2026-06-18",
+    });
+
+    expect(alphaMocks.fetchAlphaVantageDailyBars).toHaveBeenCalledWith({
+      symbol: "AAPL",
+      from: "2026-06-18",
+      to: "2026-06-18",
+    });
+    expect(gatewayLogMocks.recordGatewayLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "ohlc_cache_miss",
+        metadata: expect.objectContaining({
+          from: "2026-06-18",
+          to: "2026-06-18",
+        }),
+      }),
+    );
+  });
+
   it("backfills TSE daily OHLC with canonical symbols and J-Quants code", async () => {
     dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue(null);
     jQuantsMocks.fetchJQuantsDailyBars.mockResolvedValue([{ Date: "2025-01-02", C: 2814 }]);

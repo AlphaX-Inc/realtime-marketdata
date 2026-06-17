@@ -33,6 +33,12 @@ function toDateString(date: Date | string) {
   return typeof date === "string" ? date.slice(0, 10) : date.toISOString().slice(0, 10);
 }
 
+function addDaysToDateString(date: string, days: number) {
+  const value = toDbDate(date);
+  value.setUTCDate(value.getUTCDate() + days);
+  return toDateString(value);
+}
+
 function toDailyOhlcBar(row: DailyOhlcRow): DailyOhlcBar {
   return {
     date: toDateString(row.date),
@@ -70,7 +76,7 @@ async function readDailyOhlcBars(symbol: string, from: string, to: string) {
   return rows.map(toDailyOhlcBar);
 }
 
-async function shouldBackfillDailyOhlc(symbol: string, to: string) {
+async function getDailyOhlcBackfillRange(symbol: string, to: string) {
   const latest = await db.dailyOhlcBar.findFirst({
     where: {
       symbol,
@@ -84,7 +90,7 @@ async function shouldBackfillDailyOhlc(symbol: string, to: string) {
   });
 
   if (latest && toDateString(latest.date) >= to) {
-    return false;
+    return null;
   }
 
   const status = await db.dailyOhlcBackfillStatus.findUnique({
@@ -96,7 +102,23 @@ async function shouldBackfillDailyOhlc(symbol: string, to: string) {
     },
   });
 
-  return !status || toDateString(status.backfilledThrough) < to;
+  if (!status) {
+    return {
+      from: historicalBackfillStartDate,
+      to,
+    };
+  }
+
+  const backfilledThrough = toDateString(status.backfilledThrough);
+
+  if (backfilledThrough >= to) {
+    return null;
+  }
+
+  return {
+    from: addDaysToDateString(backfilledThrough, 1),
+    to,
+  };
 }
 
 async function upsertDailyOhlcBars(input: {
@@ -149,8 +171,13 @@ async function upsertDailyOhlcBars(input: {
   );
 }
 
-export async function backfillDailyOhlc(input: { parsed: ParsedMarketSymbol; to: string }) {
+export async function backfillDailyOhlc(input: {
+  parsed: ParsedMarketSymbol;
+  from?: string;
+  to: string;
+}) {
   const provider = getProvider(input.parsed);
+  const from = input.from ?? historicalBackfillStartDate;
 
   try {
     const bars =
@@ -158,13 +185,13 @@ export async function backfillDailyOhlc(input: { parsed: ParsedMarketSymbol; to:
         ? normalizeJQuantsDailyBars(
             await fetchJQuantsDailyBars({
               code: input.parsed.jQuantsCode,
-              from: historicalBackfillStartDate,
+              from,
               to: input.to,
             }),
           )
         : await fetchAlphaVantageDailyBars({
             symbol: input.parsed.upstreamSymbol,
-            from: historicalBackfillStartDate,
+            from,
             to: input.to,
           });
 
@@ -197,7 +224,7 @@ export async function backfillDailyOhlc(input: { parsed: ParsedMarketSymbol; to:
       message: error instanceof Error ? error.message : "Failed to backfill OHLC data",
       symbols: [input.parsed.canonical],
       metadata: {
-        from: historicalBackfillStartDate,
+        from,
         to: input.to,
         provider,
       },
@@ -212,15 +239,16 @@ export async function getCachedDailyOhlc(input: {
   to: string;
 }): Promise<DailyOhlcResponse> {
   const provider = getProvider(input.parsed);
+  const backfillRange = await getDailyOhlcBackfillRange(input.parsed.canonical, input.to);
 
-  if (await shouldBackfillDailyOhlc(input.parsed.canonical, input.to)) {
+  if (backfillRange) {
     recordGatewayLog({
       source: "downstream",
       eventType: "ohlc_cache_miss",
       message: "Backfilling cached OHLC data",
       symbols: [input.parsed.canonical],
       metadata: {
-        from: historicalBackfillStartDate,
+        from: backfillRange.from,
         to: input.to,
         provider,
       },
@@ -228,6 +256,7 @@ export async function getCachedDailyOhlc(input: {
 
     await backfillDailyOhlc({
       parsed: input.parsed,
+      from: backfillRange.from,
       to: input.to,
     });
   }
