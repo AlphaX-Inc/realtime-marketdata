@@ -60,7 +60,8 @@ Accepted TSE formats are `TSE:7203`, `7203.T`, and `72030.T`.
 Historical bars and option chains are exposed as REST endpoints using the same service API key
 authentication. `/ohlc` is the preferred cached multi-symbol endpoint. Missing symbols are
 backfilled from January 1, 2025, then served from Postgres on later requests. `/daily-ohlc` remains
-available for single-symbol compatibility.
+available for single-symbol compatibility. Manual `/stock-splits` adjustments are applied to cached
+historical OHLC before the adjustment date and are reflected by the existing OHLC endpoints.
 
 ```sh
 curl -H "x-api-key: <api-key>" \
@@ -74,6 +75,13 @@ curl -H "x-api-key: <api-key>" \
 
 curl -H "x-api-key: <api-key>" \
   "http://localhost:8000/options?market=US&symbol=IBM&date=2017-11-15"
+
+curl -H "x-api-key: <api-key>" \
+  "http://localhost:8000/stock-splits?symbols=KLAC&from=2025-01-01&to=2026-06-17"
+
+curl -X POST -H "content-type: application/json" -H "x-api-key: <api-key>" \
+  -d '{"symbol":"KLAC","adjustmentDate":"2026-06-12","ratioFrom":"1","ratioTo":"10"}' \
+  "http://localhost:8000/stock-splits"
 ```
 
 US and JP options responses are cached by market, symbol, date, and contract ID.

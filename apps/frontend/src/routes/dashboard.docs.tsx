@@ -12,19 +12,26 @@ import {
   PageHeaderEyebrow,
   PageHeaderTitle,
 } from "@realtime-pricing/ui/components/page-header";
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/dashboard/docs")({
+  validateSearch: (search: Record<string, unknown>): { tab: DocsTab } => ({
+    tab: isDocsTab(search.tab) ? search.tab : "overview",
+  }),
   component: DocsPage,
 });
 
-type DocsTab = "reference" | "consumer";
+type DocsTab = "overview" | "live" | "ohlc" | "stockSplits" | "options" | "consumer";
 
 const tabs = [
-  ["reference", "Reference"],
+  ["overview", "Overview"],
+  ["live", "Live prices"],
+  ["ohlc", "Historical OHLC"],
+  ["stockSplits", "Stock splits"],
+  ["options", "Options"],
   ["consumer", "Consumer"],
 ] as const satisfies readonly [DocsTab, string][];
+const tabValues = new Set<DocsTab>(tabs.map(([tab]) => tab));
 
 const snapshotFields = [
   [
@@ -76,8 +83,19 @@ const snapshotFields = [
   ],
 ] as const;
 
+function isDocsTab(value: unknown): value is DocsTab {
+  return typeof value === "string" && tabValues.has(value as DocsTab);
+}
+
 function DocsPage() {
-  const [activeTab, setActiveTab] = useState<DocsTab>("reference");
+  const { tab: activeTab } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+
+  function setActiveTab(tab: DocsTab) {
+    void navigate({
+      search: { tab },
+    });
+  }
 
   return (
     <div className="grid gap-5">
@@ -91,7 +109,7 @@ function DocsPage() {
 
       <div
         aria-label="Docs sections"
-        className="inline-flex w-fit rounded-lg border border-border/70 bg-card/70 p-1"
+        className="flex w-full flex-wrap gap-2 rounded-lg border border-border/70 bg-card/70 p-1"
         role="tablist"
       >
         {tabs.map(([tab, label]) => (
@@ -112,8 +130,9 @@ function DocsPage() {
         ))}
       </div>
 
-      <div className={activeTab === "reference" ? "grid gap-5" : "hidden"} role="tabpanel">
-        <Card>
+      <div className={activeTab !== "consumer" ? "grid gap-5" : "hidden"} role="tabpanel">
+        {activeTab === "overview" ? (
+          <Card>
           <CardHeader>
             <CardTitle>What to use</CardTitle>
             <CardDescription>Pick the endpoint by workflow, not by provider.</CardDescription>
@@ -148,13 +167,23 @@ function DocsPage() {
                       Cached REST query for US Alpha Vantage and JP J-Quants option chains.
                     </td>
                   </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-zinc-950">Stock splits</td>
+                    <td className="px-4 py-3 font-mono text-xs">/stock-splits</td>
+                    <td className="px-4 py-3">
+                      Manual split events that adjust cached historical OHLC before the adjustment
+                      date.
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeTab === "overview" ? (
+          <Card>
           <CardHeader>
             <CardTitle>Authentication</CardTitle>
             <CardDescription>
@@ -176,9 +205,11 @@ function DocsPage() {
               </CodeBlock>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeTab === "overview" ? (
+          <Card>
           <CardHeader>
             <CardTitle>Symbols</CardTitle>
             <CardDescription>Use canonical symbols where possible.</CardDescription>
@@ -208,9 +239,11 @@ function DocsPage() {
               </table>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeTab === "live" ? (
+          <Card>
           <CardHeader>
             <CardTitle>WebSocket latest prices</CardTitle>
             <CardDescription>
@@ -253,9 +286,11 @@ function DocsPage() {
               WebSocket shape.
             </p>
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeTab === "live" ? (
+          <Card>
           <CardHeader>
             <CardTitle>Price source behavior</CardTitle>
             <CardDescription>
@@ -311,14 +346,17 @@ function DocsPage() {
               separate 8:00 PM-4:00 AM ET feed and is not currently part of this gateway.
             </p>
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeTab === "ohlc" ? (
+          <Card>
           <CardHeader>
             <CardTitle>Daily OHLC</CardTitle>
             <CardDescription>
               Use `/ohlc` for cached multi-symbol ranges. `/daily-ohlc` remains available for
-              single-symbol compatibility.
+              single-symbol compatibility. Manual stock split adjustments are reflected in the
+              returned OHLC fields.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
@@ -381,9 +419,122 @@ x-api-key: <api-key>`}</code>
 }`}</code>
             </CodeBlock>
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeTab === "stockSplits" ? (
+          <Card>
+          <CardHeader>
+            <CardTitle>Stock splits</CardTitle>
+            <CardDescription>
+              Manual split events are an operator tool for correcting cached historical OHLC during
+              the window before upstream history is trusted.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="overflow-hidden rounded-lg border border-border/70 bg-card/80">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-secondary/70 text-zinc-600">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Step</th>
+                    <th className="px-4 py-3 font-medium">What happens</th>
+                    <th className="px-4 py-3 font-medium">Where to verify</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/70">
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-zinc-950">Apply split</td>
+                    <td className="px-4 py-3">
+                      `POST /stock-splits` stores the split event and recalculates cached OHLC rows
+                      before the adjustment date.
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">/dashboard/stock-splits</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-zinc-950">Read prices</td>
+                    <td className="px-4 py-3">
+                      `/ohlc` and `/daily-ohlc` return the adjusted values directly in
+                      `open/high/low/close/volume`.
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">/dashboard/tests</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-zinc-950">Refresh from provider</td>
+                    <td className="px-4 py-3">
+                      `POST /stock-splits/:id/refresh` reloads provider history, then disables that
+                      manual adjustment to prevent double-adjusting.
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">/dashboard/stock-splits</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-sm leading-6 text-zinc-700">
+              The adjustment date is the first post-split trading date. Only cached bars with{" "}
+              <code>date &lt; adjustmentDate</code> are adjusted. For a <code>1 -&gt; 10</code>{" "}
+              split, prices are divided by <code>10</code> and volume is multiplied by{" "}
+              <code>10</code>.
+            </p>
+            <CodeBlock>
+              <code>{`GET /stock-splits?symbols=KLAC,TSE:7203&from=2025-01-01&to=2026-06-17
+POST /stock-splits
+POST /stock-splits/:id/refresh
+x-api-key: <api-key>`}</code>
+            </CodeBlock>
+            <CodeBlock>
+              <code>{`{
+  "symbol": "KLAC",
+  "adjustmentDate": "2026-06-12",
+  "ratioFrom": "1",
+  "ratioTo": "10"
+}`}</code>
+            </CodeBlock>
+            <CodeBlock>
+              <code>{`{
+  "stockSplit": {
+    "symbol": "KLAC",
+    "market": "US",
+    "adjustmentDate": "2026-06-12",
+    "ratioFrom": "1",
+    "ratioTo": "10",
+    "factor": "10",
+    "active": true
+  },
+  "adjustedRows": 342
+}`}</code>
+            </CodeBlock>
+            <CodeBlock>
+              <code>{`// Cached raw provider row before the manual split is applied
+{
+  "date": "2026-06-11",
+  "open": "2210",
+  "high": "2431",
+  "low": "2206",
+  "close": "2411",
+  "volume": "100"
+}
+
+// Same row returned by /ohlc and /daily-ohlc after a 1 -> 10 split
+{
+  "date": "2026-06-11",
+  "open": "221",
+  "high": "243.1",
+  "low": "220.6",
+  "close": "241.1",
+  "volume": "1000",
+  "adjustedOpen": "221",
+  "adjustedHigh": "243.1",
+  "adjustedLow": "220.6",
+  "adjustedClose": "241.1",
+  "adjustedVolume": "1000"
+}`}</code>
+            </CodeBlock>
+          </CardContent>
+          </Card>
+        ) : null}
+
+        {activeTab === "options" ? (
+          <Card>
           <CardHeader>
             <CardTitle>Options</CardTitle>
             <CardDescription>
@@ -415,9 +566,11 @@ x-api-key: <api-key>`}</code>
 }`}</code>
             </CodeBlock>
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeTab === "live" ? (
+          <Card>
           <CardHeader>
             <CardTitle>Snapshot fields</CardTitle>
             <CardDescription>
@@ -448,7 +601,8 @@ x-api-key: <api-key>`}</code>
               </table>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
       </div>
 
       <div className={activeTab === "consumer" ? "grid gap-5" : "hidden"} role="tabpanel">

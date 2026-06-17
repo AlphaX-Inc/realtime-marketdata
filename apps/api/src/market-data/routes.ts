@@ -1,4 +1,5 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { getCurrentUser } from "../auth/session.js";
 import { recordGatewayLog } from "../services/gateway-logs.js";
 import { validateServiceApiKey } from "../services/service-api-keys.js";
 import {
@@ -7,6 +8,12 @@ import {
   getCachedOptions,
 } from "./historical-cache.js";
 import { parseMarketSymbol } from "./symbols.js";
+import {
+  createStockSplit,
+  listStockSplits,
+  refreshStockSplitFromProvider,
+  StockSplitError,
+} from "./stock-splits.js";
 import type { MultiSymbolDailyOhlcResponse } from "./types.js";
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -27,7 +34,7 @@ function serializeError(error: unknown) {
 
 export const marketDataRoutes = new Hono();
 
-marketDataRoutes.use("/ohlc", async (c, next) => {
+async function validateMarketDataRequest(c: Context) {
   const apiKey = c.req.header("x-api-key") ?? c.req.query("api_key");
   const serviceApiKey = apiKey ? await validateServiceApiKey(apiKey) : null;
 
@@ -41,6 +48,53 @@ marketDataRoutes.use("/ohlc", async (c, next) => {
         path: c.req.path,
       },
     });
+    return false;
+  }
+
+  return true;
+}
+
+async function validateStockSplitRequest(c: Context) {
+  const apiKey = c.req.header("x-api-key") ?? c.req.query("api_key");
+  const serviceApiKey = apiKey ? await validateServiceApiKey(apiKey) : null;
+
+  if (serviceApiKey) {
+    return true;
+  }
+
+  const user = await getCurrentUser(c);
+
+  if (user) {
+    return true;
+  }
+
+  recordGatewayLog({
+    source: "downstream",
+    eventType: "auth_failed",
+    message: "Rejected stock split request with invalid auth",
+    metadata: {
+      hasApiKey: Boolean(apiKey),
+      path: c.req.path,
+    },
+  });
+
+  return false;
+}
+
+function getStockSplitErrorStatus(error: unknown) {
+  if (!(error instanceof StockSplitError)) {
+    return 502;
+  }
+
+  if (error.status === 404 || error.status === 409) {
+    return error.status;
+  }
+
+  return 400;
+}
+
+marketDataRoutes.use("/ohlc", async (c, next) => {
+  if (!(await validateMarketDataRequest(c))) {
     return c.json({ message: "Invalid API key" }, 401);
   }
 
@@ -48,19 +102,7 @@ marketDataRoutes.use("/ohlc", async (c, next) => {
 });
 
 marketDataRoutes.use("/daily-ohlc", async (c, next) => {
-  const apiKey = c.req.header("x-api-key") ?? c.req.query("api_key");
-  const serviceApiKey = apiKey ? await validateServiceApiKey(apiKey) : null;
-
-  if (!serviceApiKey) {
-    recordGatewayLog({
-      source: "downstream",
-      eventType: "auth_failed",
-      message: "Rejected market data request with invalid API key",
-      metadata: {
-        hasApiKey: Boolean(apiKey),
-        path: c.req.path,
-      },
-    });
+  if (!(await validateMarketDataRequest(c))) {
     return c.json({ message: "Invalid API key" }, 401);
   }
 
@@ -68,20 +110,16 @@ marketDataRoutes.use("/daily-ohlc", async (c, next) => {
 });
 
 marketDataRoutes.use("/options", async (c, next) => {
-  const apiKey = c.req.header("x-api-key") ?? c.req.query("api_key");
-  const serviceApiKey = apiKey ? await validateServiceApiKey(apiKey) : null;
-
-  if (!serviceApiKey) {
-    recordGatewayLog({
-      source: "downstream",
-      eventType: "auth_failed",
-      message: "Rejected market data request with invalid API key",
-      metadata: {
-        hasApiKey: Boolean(apiKey),
-        path: c.req.path,
-      },
-    });
+  if (!(await validateMarketDataRequest(c))) {
     return c.json({ message: "Invalid API key" }, 401);
+  }
+
+  return next();
+});
+
+marketDataRoutes.use("/stock-splits", async (c, next) => {
+  if (!(await validateStockSplitRequest(c))) {
+    return c.json({ message: "Unauthorized" }, 401);
   }
 
   return next();
@@ -205,5 +243,72 @@ marketDataRoutes.get("/options", async (c) => {
     );
   } catch (error) {
     return c.json({ message: serializeError(error) }, 502);
+  }
+});
+
+marketDataRoutes.get("/stock-splits", async (c) => {
+  const symbols = c.req.query("symbols");
+  const from = c.req.query("from");
+  const to = c.req.query("to");
+
+  if ((from && !isDate(from)) || (to && !isDate(to))) {
+    return c.json({ message: "from and to must be YYYY-MM-DD when provided" }, 400);
+  }
+
+  if (from && to && from > to) {
+    return c.json({ message: "from must be before or equal to to" }, 400);
+  }
+
+  try {
+    return c.json({
+      stockSplits: await listStockSplits({
+        symbols: symbols
+          ?.split(",")
+          .map((symbol) => symbol.trim())
+          .filter(Boolean),
+        from,
+        to,
+      }),
+    });
+  } catch (error) {
+    return c.json({ message: serializeError(error) }, getStockSplitErrorStatus(error));
+  }
+});
+
+marketDataRoutes.post("/stock-splits", async (c) => {
+  const payload = (await c.req.json()) as {
+    symbol?: string;
+    adjustmentDate?: string;
+    ratioFrom?: string | number;
+    ratioTo?: string | number;
+  };
+
+  if (!payload.symbol || !isDate(payload.adjustmentDate)) {
+    return c.json({ message: "symbol and adjustmentDate=YYYY-MM-DD are required" }, 400);
+  }
+
+  if (payload.ratioFrom === undefined || payload.ratioTo === undefined) {
+    return c.json({ message: "ratioFrom and ratioTo are required" }, 400);
+  }
+
+  try {
+    return c.json(
+      await createStockSplit({
+        symbol: payload.symbol,
+        adjustmentDate: payload.adjustmentDate,
+        ratioFrom: payload.ratioFrom,
+        ratioTo: payload.ratioTo,
+      }),
+    );
+  } catch (error) {
+    return c.json({ message: serializeError(error) }, getStockSplitErrorStatus(error));
+  }
+});
+
+marketDataRoutes.post("/stock-splits/:id/refresh", async (c) => {
+  try {
+    return c.json(await refreshStockSplitFromProvider(c.req.param("id")));
+  } catch (error) {
+    return c.json({ message: serializeError(error) }, getStockSplitErrorStatus(error));
   }
 });

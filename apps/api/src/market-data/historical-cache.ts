@@ -6,6 +6,7 @@ import {
   normalizeJQuantsDailyBars,
 } from "../providers/jquants.js";
 import { recordGatewayLog } from "../services/gateway-logs.js";
+import { recomputeManualStockSplitAdjustments } from "./ohlc-adjustments.js";
 import type { ParsedMarketSymbol } from "./symbols.js";
 import type { DailyOhlcBar, DailyOhlcResponse, OptionsResponse } from "./types.js";
 
@@ -23,6 +24,12 @@ type DailyOhlcRow = {
   adjustedLow: string | null;
   adjustedClose: string | null;
   adjustedVolume: string | null;
+  manualAdjustedOpen?: string | null;
+  manualAdjustedHigh?: string | null;
+  manualAdjustedLow?: string | null;
+  manualAdjustedClose?: string | null;
+  manualAdjustedVolume?: string | null;
+  manualAdjustedAt?: Date | string | null;
 };
 
 function toDbDate(date: string) {
@@ -40,18 +47,25 @@ function addDaysToDateString(date: string, days: number) {
 }
 
 function toDailyOhlcBar(row: DailyOhlcRow): DailyOhlcBar {
+  const hasManualAdjustment = Boolean(row.manualAdjustedAt);
+  const open = row.manualAdjustedOpen ?? row.open;
+  const high = row.manualAdjustedHigh ?? row.high;
+  const low = row.manualAdjustedLow ?? row.low;
+  const close = row.manualAdjustedClose ?? row.close;
+  const volume = row.manualAdjustedVolume ?? row.volume;
+
   return {
     date: toDateString(row.date),
-    open: row.open,
-    high: row.high,
-    low: row.low,
-    close: row.close,
-    volume: row.volume,
-    adjustedOpen: row.adjustedOpen,
-    adjustedHigh: row.adjustedHigh,
-    adjustedLow: row.adjustedLow,
-    adjustedClose: row.adjustedClose,
-    adjustedVolume: row.adjustedVolume,
+    open,
+    high,
+    low,
+    close,
+    volume,
+    adjustedOpen: hasManualAdjustment ? open : row.adjustedOpen,
+    adjustedHigh: hasManualAdjustment ? high : row.adjustedHigh,
+    adjustedLow: hasManualAdjustment ? low : row.adjustedLow,
+    adjustedClose: hasManualAdjustment ? close : row.adjustedClose,
+    adjustedVolume: hasManualAdjustment ? volume : row.adjustedVolume,
   };
 }
 
@@ -243,6 +257,7 @@ export async function backfillDailyOhlc(input: {
       provider,
       bars,
     });
+    await recomputeManualStockSplitAdjustments(input.parsed.canonical);
 
     await db.dailyOhlcBackfillStatus.upsert({
       where: {

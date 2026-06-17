@@ -35,10 +35,15 @@ const gatewayLogMocks = vi.hoisted(() => ({
   recordGatewayLog: vi.fn(),
 }));
 
+const adjustmentMocks = vi.hoisted(() => ({
+  recomputeManualStockSplitAdjustments: vi.fn(),
+}));
+
 vi.mock("../db.js", () => dbMocks);
 vi.mock("../providers/alphavantage.js", () => alphaMocks);
 vi.mock("../providers/jquants.js", () => jQuantsMocks);
 vi.mock("../services/gateway-logs.js", () => gatewayLogMocks);
+vi.mock("./ohlc-adjustments.js", () => adjustmentMocks);
 
 describe("historical market data cache", () => {
   beforeEach(() => {
@@ -56,6 +61,7 @@ describe("historical market data cache", () => {
     jQuantsMocks.fetchJQuantsOptions.mockReset();
     jQuantsMocks.normalizeJQuantsDailyBars.mockReset();
     gatewayLogMocks.recordGatewayLog.mockReset();
+    adjustmentMocks.recomputeManualStockSplitAdjustments.mockReset();
 
     dbMocks.db.dailyOhlcBar.upsert.mockResolvedValue({});
     dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue(null);
@@ -196,6 +202,61 @@ describe("historical market data cache", () => {
         symbols: ["AAPL"],
       }),
     );
+    expect(adjustmentMocks.recomputeManualStockSplitAdjustments).toHaveBeenCalledWith("AAPL");
+  });
+
+  it("returns manual stock split adjusted OHLC values when cached", async () => {
+    dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
+      date: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([
+      {
+        date: new Date("2026-06-11T00:00:00.000Z"),
+        open: "2210",
+        high: "2431",
+        low: "2206",
+        close: "2411",
+        volume: "100",
+        adjustedOpen: null,
+        adjustedHigh: null,
+        adjustedLow: null,
+        adjustedClose: null,
+        adjustedVolume: null,
+        manualAdjustedOpen: "221",
+        manualAdjustedHigh: "243.1",
+        manualAdjustedLow: "220.6",
+        manualAdjustedClose: "241.1",
+        manualAdjustedVolume: "1000",
+        manualAdjustedAt: new Date("2026-06-17T00:00:00.000Z"),
+      },
+    ]);
+
+    const { getCachedDailyOhlc } = await import("./historical-cache.js");
+    const response = await getCachedDailyOhlc({
+      parsed: {
+        market: "US",
+        canonical: "KLAC",
+        upstreamSymbol: "KLAC",
+      },
+      from: "2026-06-01",
+      to: "2026-06-12",
+    });
+
+    expect(response.bars).toEqual([
+      {
+        date: "2026-06-11",
+        open: "221",
+        high: "243.1",
+        low: "220.6",
+        close: "241.1",
+        volume: "1000",
+        adjustedOpen: "221",
+        adjustedHigh: "243.1",
+        adjustedLow: "220.6",
+        adjustedClose: "241.1",
+        adjustedVolume: "1000",
+      },
+    ]);
   });
 
   it("does not refetch when a backfill watermark already covers the requested date", async () => {

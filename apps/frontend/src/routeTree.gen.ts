@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardTestsRouteImport } from './routes/dashboard.tests'
+import { Route as DashboardStockSplitsRouteImport } from './routes/dashboard.stock-splits'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
 import { Route as DashboardDocsRouteImport } from './routes/dashboard.docs'
 import { Route as DashboardApiKeysRouteImport } from './routes/dashboard.api-keys'
@@ -61,6 +62,11 @@ const DashboardTestsRoute = DashboardTestsRouteImport.update({
   path: '/tests',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardStockSplitsRoute = DashboardStockSplitsRouteImport.update({
+  id: '/stock-splits',
+  path: '/stock-splits',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardLogsRoute = DashboardLogsRouteImport.update({
   id: '/logs',
   path: '/logs',
@@ -86,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/stock-splits': typeof DashboardStockSplitsRoute
   '/dashboard/tests': typeof DashboardTestsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByTo {
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/stock-splits': typeof DashboardStockSplitsRoute
   '/dashboard/tests': typeof DashboardTestsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/stock-splits': typeof DashboardStockSplitsRoute
   '/dashboard/tests': typeof DashboardTestsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
     | '/dashboard/api-keys'
     | '/dashboard/docs'
     | '/dashboard/logs'
+    | '/dashboard/stock-splits'
     | '/dashboard/tests'
     | '/dashboard/users'
     | '/dashboard/'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
     | '/dashboard/api-keys'
     | '/dashboard/docs'
     | '/dashboard/logs'
+    | '/dashboard/stock-splits'
     | '/dashboard/tests'
     | '/dashboard/users'
     | '/dashboard'
@@ -152,6 +163,7 @@ export interface FileRouteTypes {
     | '/dashboard/api-keys'
     | '/dashboard/docs'
     | '/dashboard/logs'
+    | '/dashboard/stock-splits'
     | '/dashboard/tests'
     | '/dashboard/users'
     | '/dashboard/'
@@ -223,6 +235,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardTestsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/stock-splits': {
+      id: '/dashboard/stock-splits'
+      path: '/stock-splits'
+      fullPath: '/dashboard/stock-splits'
+      preLoaderRoute: typeof DashboardStockSplitsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/logs': {
       id: '/dashboard/logs'
       path: '/logs'
@@ -251,6 +270,7 @@ interface DashboardRouteChildren {
   DashboardApiKeysRoute: typeof DashboardApiKeysRoute
   DashboardDocsRoute: typeof DashboardDocsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
+  DashboardStockSplitsRoute: typeof DashboardStockSplitsRoute
   DashboardTestsRoute: typeof DashboardTestsRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -260,6 +280,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardApiKeysRoute: DashboardApiKeysRoute,
   DashboardDocsRoute: DashboardDocsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
+  DashboardStockSplitsRoute: DashboardStockSplitsRoute,
   DashboardTestsRoute: DashboardTestsRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardIndexRoute: DashboardIndexRoute,
