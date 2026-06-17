@@ -81,6 +81,18 @@ model DailyOhlcBar {
   @@index([market, date])
 }
 
+model DailyOhlcBackfillStatus {
+  id                String   @id @default(cuid())
+  symbol            String   @unique
+  market            String
+  provider          String
+  backfilledThrough DateTime @db.Date
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([backfilledThrough])
+}
+
 model OptionContractDaily {
   id         String   @id @default(cuid())
   market     String
