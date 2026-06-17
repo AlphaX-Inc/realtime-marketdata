@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 import { recordGatewayLog } from "../services/gateway-logs.js";
 import { validateServiceApiKey } from "../services/service-api-keys.js";
-import { getCachedDailyOhlc, getCachedOptions } from "./historical-cache.js";
+import {
+  getCachedDailyOhlc,
+  getCachedDailyOhlcBatch,
+  getCachedOptions,
+} from "./historical-cache.js";
 import { parseMarketSymbol } from "./symbols.js";
 import type { MultiSymbolDailyOhlcResponse } from "./types.js";
 
@@ -128,15 +132,11 @@ marketDataRoutes.get("/ohlc", async (c) => {
   );
 
   try {
-    const results = await Promise.all(
-      dedupedSymbols.map((parsed) =>
-        getCachedDailyOhlc({
-          parsed,
-          from,
-          to,
-        }),
-      ),
-    );
+    const results = await getCachedDailyOhlcBatch({
+      parsedSymbols: dedupedSymbols,
+      from,
+      to,
+    });
 
     const response: MultiSymbolDailyOhlcResponse = {
       from,
