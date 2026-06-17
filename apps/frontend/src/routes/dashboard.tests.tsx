@@ -1,4 +1,11 @@
-import { ArrowsClockwise, Heartbeat, Lightning, Stop, WifiHigh } from "@phosphor-icons/react";
+import {
+  ArrowsClockwise,
+  GitBranch,
+  Heartbeat,
+  Lightning,
+  Stop,
+  WifiHigh,
+} from "@phosphor-icons/react";
 import { Alert, AlertDescription, AlertTitle } from "@realtime-pricing/ui/components/alert";
 import { Badge } from "@realtime-pricing/ui/components/badge";
 import { Button } from "@realtime-pricing/ui/components/button";
@@ -14,11 +21,14 @@ import { Input } from "@realtime-pricing/ui/components/input";
 import { Label } from "@realtime-pricing/ui/components/label";
 import { Skeleton } from "@realtime-pricing/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listApiKeys } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/tests")({
+  validateSearch: (search: Record<string, unknown>): { tab: TestSection } => ({
+    tab: isTestSection(search.tab) ? search.tab : "ohlc",
+  }),
   component: TestsPage,
 });
 
@@ -30,7 +40,8 @@ type TestState = {
   error?: string;
 };
 
-type TestId = "health" | "ohlc" | "dailyOhlc" | "usOptions" | "jpOptions";
+type TestId = "health" | "ohlc" | "dailyOhlc" | "usOptions" | "jpOptions" | "stockSplits";
+type TestSection = "ohlc" | "dailyOhlc" | "usOptions" | "jpOptions" | "stockSplits" | "webSocket";
 
 const initialTests: Record<TestId, TestState> = {
   health: { status: "idle" },
@@ -38,7 +49,18 @@ const initialTests: Record<TestId, TestState> = {
   dailyOhlc: { status: "idle" },
   usOptions: { status: "idle" },
   jpOptions: { status: "idle" },
+  stockSplits: { status: "idle" },
 };
+
+const testSections = [
+  ["ohlc", "Multi-symbol OHLC"],
+  ["dailyOhlc", "Single OHLC"],
+  ["usOptions", "US options"],
+  ["jpOptions", "JP options"],
+  ["stockSplits", "Stock splits"],
+  ["webSocket", "WebSocket"],
+] as const satisfies readonly [TestSection, string][];
+const testSectionValues = new Set<TestSection>(testSections.map(([section]) => section));
 
 const apiBaseUrl = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL ?? "/api");
 
@@ -93,6 +115,10 @@ function statusLabel(status: TestState["status"]) {
   return "Idle";
 }
 
+function isTestSection(value: unknown): value is TestSection {
+  return typeof value === "string" && testSectionValues.has(value as TestSection);
+}
+
 function TestResult({ state }: { state: TestState }) {
   const payload =
     state.status === "error"
@@ -118,8 +144,11 @@ function TestResult({ state }: { state: TestState }) {
 }
 
 function TestsPage() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("service-api-key") ?? "");
-  const [selectedApiKeyId, setSelectedApiKeyId] = useState("");
+  const { tab: activeSection } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const [selectedApiKeyId, setSelectedApiKeyId] = useState(
+    () => localStorage.getItem("service-api-key-id") ?? "",
+  );
   const [symbols, setSymbols] = useState("AAPL,NVDA,TSE:7203");
   const [dailySymbol, setDailySymbol] = useState("TSE:7203");
   const [from, setFrom] = useState("2025-01-01");
@@ -129,6 +158,9 @@ function TestsPage() {
   const [usOptionContract, setUsOptionContract] = useState("");
   const [jpOptionSymbol, setJpOptionSymbol] = useState("2914");
   const [jpOptionDate, setJpOptionDate] = useState("2025-12-01");
+  const [stockSplitSymbols, setStockSplitSymbols] = useState("KLAC");
+  const [stockSplitFrom, setStockSplitFrom] = useState("2025-01-01");
+  const [stockSplitTo, setStockSplitTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [tests, setTests] = useState<Record<TestId, TestState>>(initialTests);
   const [wsSymbols, setWsSymbols] = useState("AAPL,TSE:7203");
   const [wsStatus, setWsStatus] = useState<"idle" | "connecting" | "open" | "closed" | "error">(
@@ -144,21 +176,37 @@ function TestsPage() {
     () => (apiKeysQuery.data?.apiKeys ?? []).filter((item) => item.active),
     [apiKeysQuery.data?.apiKeys],
   );
+  const selectedApiKey = useMemo(
+    () => activeApiKeys.find((item) => item.id === selectedApiKeyId) ?? activeApiKeys[0] ?? null,
+    [activeApiKeys, selectedApiKeyId],
+  );
+  const apiKey = selectedApiKey?.key ?? "";
+
+  function setActiveSection(tab: TestSection) {
+    void navigate({
+      search: { tab },
+    });
+  }
 
   useEffect(() => {
-    if (apiKey) {
-      localStorage.setItem("service-api-key", apiKey);
+    if (selectedApiKeyId) {
+      localStorage.setItem("service-api-key-id", selectedApiKeyId);
       return;
     }
 
-    localStorage.removeItem("service-api-key");
-  }, [apiKey]);
+    localStorage.removeItem("service-api-key-id");
+  }, [selectedApiKeyId]);
 
   useEffect(() => {
-    const matchingKey = activeApiKeys.find((item) => item.key === apiKey);
+    if (activeApiKeys.length === 0) {
+      setSelectedApiKeyId("");
+      return;
+    }
 
-    setSelectedApiKeyId(matchingKey?.id ?? "");
-  }, [activeApiKeys, apiKey]);
+    if (!selectedApiKeyId || !activeApiKeys.some((item) => item.id === selectedApiKeyId)) {
+      setSelectedApiKeyId(activeApiKeys[0]?.id ?? "");
+    }
+  }, [activeApiKeys, selectedApiKeyId]);
 
   useEffect(() => {
     return () => {
@@ -175,12 +223,16 @@ function TestsPage() {
         usOptionContract ? `&contract=${encodeURIComponent(usOptionContract)}` : ""
       }`,
       jpOptions: `/options?market=JP&symbol=${encodeURIComponent(jpOptionSymbol)}&date=${jpOptionDate}`,
+      stockSplits: `/stock-splits?symbols=${encodeURIComponent(stockSplitSymbols)}&from=${stockSplitFrom}&to=${stockSplitTo}`,
     }),
     [
       dailySymbol,
       from,
       jpOptionDate,
       jpOptionSymbol,
+      stockSplitFrom,
+      stockSplitSymbols,
+      stockSplitTo,
       symbols,
       to,
       usOptionContract,
@@ -322,8 +374,8 @@ function TestsPage() {
         <CardHeader>
           <CardTitle>Service API key</CardTitle>
           <CardDescription>
-            Select an active dashboard key or paste one manually. The chosen key is sent as
-            `x-api-key` for market data tests.
+            Select an active dashboard key. The chosen key is sent as `x-api-key` for market data
+            tests.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -338,7 +390,8 @@ function TestsPage() {
             ) : activeApiKeys.length === 0 ? (
               <Alert>
                 <AlertDescription>
-                  No active API keys found. Create one from the API keys page or paste a key below.
+                  No active API keys found. Create one from the API keys page before running market
+                  data tests.
                 </AlertDescription>
               </Alert>
             ) : (
@@ -351,11 +404,10 @@ function TestsPage() {
                   setSelectedApiKeyId(event.target.value);
 
                   if (selectedKey) {
-                    setApiKey(selectedKey.key);
+                    setSelectedApiKeyId(selectedKey.id);
                   }
                 }}
               >
-                <option value="">Manual key</option>
                 {activeApiKeys.map((item) => (
                   <option value={item.id} key={item.id}>
                     {item.name}
@@ -367,21 +419,35 @@ function TestsPage() {
               </select>
             )}
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="service-key">API key</Label>
-            <Input
-              id="service-key"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder="Paste service API key"
-              type="password"
-            />
-          </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Card>
+      <div
+        aria-label="Test endpoint forms"
+        className="flex w-full flex-wrap gap-2 rounded-lg border border-border/70 bg-card/70 p-1"
+        role="tablist"
+      >
+        {testSections.map(([section, label]) => (
+          <button
+            aria-selected={activeSection === section}
+            className={
+              activeSection === section
+                ? "rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white"
+                : "rounded-md px-4 py-2 text-sm font-medium text-muted-foreground hover:text-zinc-950"
+            }
+            key={section}
+            onClick={() => setActiveSection(section)}
+            role="tab"
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-5">
+        {activeSection === "ohlc" ? (
+          <Card>
           <CardHeader>
             <CardTitle>Cached multi-symbol OHLC</CardTitle>
             <CardDescription>{endpoints.ohlc}</CardDescription>
@@ -421,9 +487,11 @@ function TestsPage() {
             </Button>
             <TestResult state={tests.ohlc} />
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeSection === "dailyOhlc" ? (
+          <Card>
           <CardHeader>
             <CardTitle>Single-symbol compatibility</CardTitle>
             <CardDescription>{endpoints.dailyOhlc}</CardDescription>
@@ -463,9 +531,11 @@ function TestsPage() {
             </Button>
             <TestResult state={tests.dailyOhlc} />
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeSection === "usOptions" ? (
+          <Card>
           <CardHeader>
             <CardTitle>US options cache</CardTitle>
             <CardDescription>{endpoints.usOptions}</CardDescription>
@@ -505,9 +575,11 @@ function TestsPage() {
             </Button>
             <TestResult state={tests.usOptions} />
           </CardContent>
-        </Card>
+          </Card>
+        ) : null}
 
-        <Card>
+        {activeSection === "jpOptions" ? (
+          <Card>
           <CardHeader>
             <CardTitle>JP options cache</CardTitle>
             <CardDescription>{endpoints.jpOptions}</CardDescription>
@@ -538,10 +610,55 @@ function TestsPage() {
             </Button>
             <TestResult state={tests.jpOptions} />
           </CardContent>
-        </Card>
-      </div>
+          </Card>
+        ) : null}
 
-      <Card>
+        {activeSection === "stockSplits" ? (
+          <Card>
+          <CardHeader>
+            <CardTitle>Stock split adjustments</CardTitle>
+            <CardDescription>{endpoints.stockSplits}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-3 md:grid-cols-[1.3fr_1fr_1fr]">
+              <div className="grid gap-2">
+                <Label htmlFor="stock-split-symbols">Symbols</Label>
+                <Input
+                  id="stock-split-symbols"
+                  value={stockSplitSymbols}
+                  onChange={(event) => setStockSplitSymbols(event.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="stock-split-from">From</Label>
+                <Input
+                  id="stock-split-from"
+                  value={stockSplitFrom}
+                  onChange={(event) => setStockSplitFrom(event.target.value)}
+                  type="date"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="stock-split-to">To</Label>
+                <Input
+                  id="stock-split-to"
+                  value={stockSplitTo}
+                  onChange={(event) => setStockSplitTo(event.target.value)}
+                  type="date"
+                />
+              </div>
+            </div>
+            <Button type="button" onClick={() => void runRestTest("stockSplits")}>
+              <GitBranch className="size-4" />
+              Run Stock Splits
+            </Button>
+            <TestResult state={tests.stockSplits} />
+          </CardContent>
+          </Card>
+        ) : null}
+
+        {activeSection === "webSocket" ? (
+          <Card>
         <CardHeader>
           <CardTitle>WebSocket prices</CardTitle>
           <CardDescription>
@@ -591,7 +708,9 @@ function TestsPage() {
             </code>
           </CodeBlock>
         </CardContent>
-      </Card>
+          </Card>
+        ) : null}
+      </div>
 
       <TestResult state={tests.health} />
     </div>

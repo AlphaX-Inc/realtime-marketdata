@@ -35,5 +35,6 @@ export type {
   Prisma,
   ServiceApiKey,
   Session,
+  StockSplitAdjustment,
   User,
 } from "@prisma/client";

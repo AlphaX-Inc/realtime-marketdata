@@ -43,6 +43,21 @@ export type GatewayLog = {
   createdAt: string;
 };
 
+export type StockSplitAdjustment = {
+  id: string;
+  symbol: string;
+  market: "US" | "TSE";
+  adjustmentDate: string;
+  ratioFrom: string;
+  ratioTo: string;
+  factor: string;
+  active: boolean;
+  appliedAt: string | null;
+  providerRefreshedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -169,4 +184,54 @@ export async function listGatewayLogs(limit = 100) {
   return request<{
     logs: GatewayLog[];
   }>(`/logs?limit=${limit}`);
+}
+
+export async function listStockSplits(payload: {
+  symbols?: string;
+  from?: string;
+  to?: string;
+} = {}) {
+  const params = new URLSearchParams();
+
+  if (payload.symbols?.trim()) {
+    params.set("symbols", payload.symbols.trim());
+  }
+
+  if (payload.from) {
+    params.set("from", payload.from);
+  }
+
+  if (payload.to) {
+    params.set("to", payload.to);
+  }
+
+  const query = params.toString();
+
+  return request<{
+    stockSplits: StockSplitAdjustment[];
+  }>(`/stock-splits${query ? `?${query}` : ""}`);
+}
+
+export async function createStockSplit(payload: {
+  symbol: string;
+  adjustmentDate: string;
+  ratioFrom: string;
+  ratioTo: string;
+}) {
+  return request<{
+    stockSplit: StockSplitAdjustment;
+    adjustedRows: number;
+  }>("/stock-splits", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function refreshStockSplit(id: string) {
+  return request<{
+    stockSplit: StockSplitAdjustment;
+    adjustedRows: number;
+  }>(`/stock-splits/${id}/refresh`, {
+    method: "POST",
+  });
 }

@@ -73,6 +73,12 @@ model DailyOhlcBar {
   adjustedLow    String?
   adjustedClose  String?
   adjustedVolume String?
+  manualAdjustedOpen   String?
+  manualAdjustedHigh   String?
+  manualAdjustedLow    String?
+  manualAdjustedClose  String?
+  manualAdjustedVolume String?
+  manualAdjustedAt     DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -91,6 +97,25 @@ model DailyOhlcBackfillStatus {
   updatedAt         DateTime @updatedAt
 
   @@index([backfilledThrough])
+}
+
+model StockSplitAdjustment {
+  id                  String    @id @default(cuid())
+  symbol              String
+  market              String
+  adjustmentDate      DateTime  @db.Date
+  ratioFrom           String
+  ratioTo             String
+  factor              String
+  active              Boolean   @default(true)
+  appliedAt           DateTime?
+  providerRefreshedAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([symbol, adjustmentDate])
+  @@index([symbol, adjustmentDate])
+  @@index([market, adjustmentDate])
 }
 
 model OptionContractDaily {

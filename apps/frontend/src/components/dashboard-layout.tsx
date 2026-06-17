@@ -3,6 +3,7 @@ import {
   Broadcast,
   Clock,
   Flask,
+  GitBranch,
   Key,
   SignOut,
   UsersThree,
@@ -28,14 +29,19 @@ import { getCurrentUser, logout } from "@/lib/api";
 
 const navItems = [
   {
-    to: "/dashboard/users",
-    label: "Users",
-    icon: UsersThree,
-  },
-  {
     to: "/dashboard/api-keys",
     label: "API keys",
     icon: Key,
+  },
+  {
+    to: "/dashboard/stock-splits",
+    label: "Stock splits",
+    icon: GitBranch,
+  },
+  {
+    to: "/dashboard/tests",
+    label: "Tests",
+    icon: Flask,
   },
   {
     to: "/dashboard/docs",
@@ -43,9 +49,9 @@ const navItems = [
     icon: BookOpenText,
   },
   {
-    to: "/dashboard/tests",
-    label: "Tests",
-    icon: Flask,
+    to: "/dashboard/users",
+    label: "Users",
+    icon: UsersThree,
   },
   {
     to: "/dashboard/logs",
