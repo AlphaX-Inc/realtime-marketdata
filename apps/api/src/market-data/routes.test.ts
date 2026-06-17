@@ -6,6 +6,7 @@ const serviceKeyMocks = vi.hoisted(() => ({
 
 const cacheMocks = vi.hoisted(() => ({
   getCachedDailyOhlc: vi.fn(),
+  getCachedDailyOhlcBatch: vi.fn(),
   getCachedOptions: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ describe("market data routes", () => {
   beforeEach(() => {
     serviceKeyMocks.validateServiceApiKey.mockReset();
     cacheMocks.getCachedDailyOhlc.mockReset();
+    cacheMocks.getCachedDailyOhlcBatch.mockReset();
     cacheMocks.getCachedOptions.mockReset();
   });
 
@@ -63,19 +65,20 @@ describe("market data routes", () => {
 
   it("returns multi-symbol OHLC from the cache service", async () => {
     serviceKeyMocks.validateServiceApiKey.mockResolvedValue({ id: "key" });
-    cacheMocks.getCachedDailyOhlc
-      .mockResolvedValueOnce({
+    cacheMocks.getCachedDailyOhlcBatch.mockResolvedValue([
+      {
         symbol: "AAPL",
         market: "US",
         provider: "alphavantage",
         bars: [{ date: "2025-01-02", close: "100" }],
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         symbol: "TSE:7203",
         market: "TSE",
         provider: "jquants",
         bars: [{ date: "2025-01-02", close: "2814" }],
-      });
+      },
+    ]);
 
     const { marketDataRoutes } = await import("./routes.js");
     const response = await marketDataRoutes.request(
@@ -88,24 +91,22 @@ describe("market data routes", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(cacheMocks.getCachedDailyOhlc).toHaveBeenCalledTimes(2);
-    expect(cacheMocks.getCachedDailyOhlc).toHaveBeenNthCalledWith(1, {
-      parsed: {
-        market: "US",
-        canonical: "AAPL",
-        upstreamSymbol: "AAPL",
-      },
-      from: "2025-01-01",
-      to: "2025-01-02",
-    });
-    expect(cacheMocks.getCachedDailyOhlc).toHaveBeenNthCalledWith(2, {
-      parsed: {
-        market: "TSE",
-        canonical: "TSE:7203",
-        upstreamSymbol: "72030",
-        jQuantsCode: "72030",
-        tseCode: "7203",
-      },
+    expect(cacheMocks.getCachedDailyOhlcBatch).toHaveBeenCalledTimes(1);
+    expect(cacheMocks.getCachedDailyOhlcBatch).toHaveBeenCalledWith({
+      parsedSymbols: [
+        {
+          market: "US",
+          canonical: "AAPL",
+          upstreamSymbol: "AAPL",
+        },
+        {
+          market: "TSE",
+          canonical: "TSE:7203",
+          upstreamSymbol: "72030",
+          jQuantsCode: "72030",
+          tseCode: "7203",
+        },
+      ],
       from: "2025-01-01",
       to: "2025-01-02",
     });
