@@ -259,6 +259,60 @@ describe("historical market data cache", () => {
     ]);
   });
 
+  it("returns provider-adjusted OHLC values after provider refresh", async () => {
+    dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
+      date: new Date("2026-06-12T00:00:00.000Z"),
+    });
+    dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([
+      {
+        date: new Date("2026-06-11T00:00:00.000Z"),
+        open: "2210",
+        high: "2431",
+        low: "2206",
+        close: "2411",
+        volume: "100",
+        adjustedOpen: "221",
+        adjustedHigh: "243.1",
+        adjustedLow: "220.6",
+        adjustedClose: "241.1",
+        adjustedVolume: "1000",
+        manualAdjustedOpen: null,
+        manualAdjustedHigh: null,
+        manualAdjustedLow: null,
+        manualAdjustedClose: null,
+        manualAdjustedVolume: null,
+        manualAdjustedAt: null,
+      },
+    ]);
+
+    const { getCachedDailyOhlc } = await import("./historical-cache.js");
+    const response = await getCachedDailyOhlc({
+      parsed: {
+        market: "US",
+        canonical: "KLAC",
+        upstreamSymbol: "KLAC",
+      },
+      from: "2026-06-01",
+      to: "2026-06-12",
+    });
+
+    expect(response.bars).toEqual([
+      {
+        date: "2026-06-11",
+        open: "221",
+        high: "243.1",
+        low: "220.6",
+        close: "241.1",
+        volume: "1000",
+        adjustedOpen: "221",
+        adjustedHigh: "243.1",
+        adjustedLow: "220.6",
+        adjustedClose: "241.1",
+        adjustedVolume: "1000",
+      },
+    ]);
+  });
+
   it("does not refetch when a backfill watermark already covers the requested date", async () => {
     dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
       date: new Date("2026-06-16T00:00:00.000Z"),
