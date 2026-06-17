@@ -1,4 +1,5 @@
 export type {
+  DailyOhlcBackfillStatus,
   DailyOhlcBar,
   GatewayLog,
   OptionContractDaily,
