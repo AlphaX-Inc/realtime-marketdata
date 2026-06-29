@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMocks = vi.hoisted(() => ({
   db: {
@@ -47,6 +47,9 @@ vi.mock("./ohlc-adjustments.js", () => adjustmentMocks);
 
 describe("historical market data cache", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-30T21:00:00.000Z"));
+
     dbMocks.db.dailyOhlcBar.findFirst.mockReset();
     dbMocks.db.dailyOhlcBar.findMany.mockReset();
     dbMocks.db.dailyOhlcBar.groupBy.mockReset();
@@ -68,6 +71,10 @@ describe("historical market data cache", () => {
     dbMocks.db.dailyOhlcBackfillStatus.findMany.mockResolvedValue([]);
     dbMocks.db.dailyOhlcBackfillStatus.upsert.mockResolvedValue({});
     dbMocks.db.optionContractDaily.upsert.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("serves daily OHLC cache hits without calling upstream providers", async () => {
@@ -313,16 +320,18 @@ describe("historical market data cache", () => {
     ]);
   });
 
-  it("does not refetch when a backfill watermark already covers the requested date", async () => {
+  it("does not refetch when cached bars cover the latest closed market date", async () => {
+    vi.setSystemTime(new Date("2026-06-29T05:58:00.000Z"));
+
     dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
-      date: new Date("2026-06-16T00:00:00.000Z"),
+      date: new Date("2026-06-26T00:00:00.000Z"),
     });
     dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue({
-      backfilledThrough: new Date("2026-06-17T00:00:00.000Z"),
+      backfilledThrough: new Date("2026-06-29T00:00:00.000Z"),
     });
     dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([
       {
-        date: new Date("2026-06-16T00:00:00.000Z"),
+        date: new Date("2026-06-26T00:00:00.000Z"),
         open: "100",
         high: "101",
         low: "99",
@@ -344,14 +353,109 @@ describe("historical market data cache", () => {
         upstreamSymbol: "AAPL",
       },
       from: "2026-06-01",
-      to: "2026-06-17",
+      to: "2026-06-29",
     });
 
     expect(alphaMocks.fetchAlphaVantageDailyBars).not.toHaveBeenCalled();
     expect(dbMocks.db.dailyOhlcBackfillStatus.upsert).not.toHaveBeenCalled();
   });
 
-  it("only fetches dates after the previous backfill watermark", async () => {
+  it("refetches stale cached bars when the watermark is ahead of the latest row", async () => {
+    vi.setSystemTime(new Date("2026-06-29T05:58:00.000Z"));
+
+    dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
+      date: new Date("2026-06-23T00:00:00.000Z"),
+    });
+    dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue({
+      backfilledThrough: new Date("2026-06-29T00:00:00.000Z"),
+    });
+    alphaMocks.fetchAlphaVantageDailyBars.mockResolvedValue([
+      {
+        date: "2026-06-24",
+        open: "1987.53",
+        high: "2021.5",
+        low: "1861.0101",
+        close: "1914.46",
+        volume: "10421273",
+      },
+      {
+        date: "2026-06-25",
+        open: "2238.305",
+        high: "2347.999",
+        low: "2092.08",
+        close: "2335",
+        volume: "15030228",
+      },
+      {
+        date: "2026-06-26",
+        open: "2169.995",
+        high: "2256.11",
+        low: "2063.039",
+        close: "2090.71",
+        volume: "16867055",
+      },
+    ]);
+    dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([
+      {
+        date: new Date("2026-06-26T00:00:00.000Z"),
+        open: "2169.995",
+        high: "2256.11",
+        low: "2063.039",
+        close: "2090.71",
+        volume: "16867055",
+        adjustedOpen: null,
+        adjustedHigh: null,
+        adjustedLow: null,
+        adjustedClose: null,
+        adjustedVolume: null,
+      },
+    ]);
+
+    const { getCachedDailyOhlc } = await import("./historical-cache.js");
+    await getCachedDailyOhlc({
+      parsed: {
+        market: "US",
+        canonical: "SNDK",
+        upstreamSymbol: "SNDK",
+      },
+      from: "2026-06-22",
+      to: "2026-06-29",
+    });
+
+    expect(alphaMocks.fetchAlphaVantageDailyBars).toHaveBeenCalledWith({
+      symbol: "SNDK",
+      from: "2026-06-24",
+      to: "2026-06-26",
+    });
+    expect(dbMocks.db.dailyOhlcBackfillStatus.upsert).toHaveBeenCalledWith({
+      where: {
+        symbol: "SNDK",
+      },
+      create: {
+        symbol: "SNDK",
+        market: "US",
+        provider: "alphavantage",
+        backfilledThrough: new Date("2026-06-26T00:00:00.000Z"),
+      },
+      update: {
+        market: "US",
+        provider: "alphavantage",
+        backfilledThrough: new Date("2026-06-26T00:00:00.000Z"),
+      },
+    });
+    expect(gatewayLogMocks.recordGatewayLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "ohlc_cache_miss",
+        metadata: expect.objectContaining({
+          from: "2026-06-24",
+          to: "2026-06-26",
+        }),
+        symbols: ["SNDK"],
+      }),
+    );
+  });
+
+  it("only fetches dates after the newest cached bar", async () => {
     dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
       date: new Date("2026-06-17T00:00:00.000Z"),
     });

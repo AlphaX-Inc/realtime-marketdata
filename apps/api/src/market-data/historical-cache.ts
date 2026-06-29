@@ -12,6 +12,8 @@ import type { DailyOhlcBar, DailyOhlcResponse, OptionsResponse } from "./types.j
 
 export const historicalBackfillStartDate = "2025-01-01";
 
+type DailyOhlcMarket = ParsedMarketSymbol["market"];
+
 type DailyOhlcRow = {
   date: Date | string;
   open: string | null;
@@ -32,6 +34,17 @@ type DailyOhlcRow = {
   manualAdjustedAt?: Date | string | null;
 };
 
+const marketDailyCloses = {
+  US: {
+    timeZone: "America/New_York",
+    closeMinutes: 16 * 60,
+  },
+  TSE: {
+    timeZone: "Asia/Tokyo",
+    closeMinutes: 15 * 60 + 30,
+  },
+} satisfies Record<DailyOhlcMarket, { timeZone: string; closeMinutes: number }>;
+
 function toDbDate(date: string) {
   return new Date(`${date}T00:00:00.000Z`);
 }
@@ -46,6 +59,73 @@ function addDaysToDateString(date: string, days: number) {
   return toDateString(value);
 }
 
+function getZonedParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return {
+    date: `${value("year")}-${value("month")}-${value("day")}`,
+    weekday: value("weekday"),
+    minutes: Number(value("hour")) * 60 + Number(value("minute")),
+  };
+}
+
+function getWeekdayForMarketDate(date: string, timeZone: string) {
+  return getZonedParts(new Date(`${date}T12:00:00.000Z`), timeZone).weekday;
+}
+
+function isWeekend(weekday: string) {
+  return weekday === "Sat" || weekday === "Sun";
+}
+
+function getPreviousWeekdayOnOrBefore(date: string, timeZone: string) {
+  let value = date;
+
+  while (isWeekend(getWeekdayForMarketDate(value, timeZone))) {
+    value = addDaysToDateString(value, -1);
+  }
+
+  return value;
+}
+
+function getPreviousWeekdayBefore(date: string, timeZone: string) {
+  return getPreviousWeekdayOnOrBefore(addDaysToDateString(date, -1), timeZone);
+}
+
+function getLatestClosedMarketDate(market: DailyOhlcMarket, now = new Date()) {
+  const close = marketDailyCloses[market];
+  const parts = getZonedParts(now, close.timeZone);
+
+  if (isWeekend(parts.weekday)) {
+    return getPreviousWeekdayBefore(parts.date, close.timeZone);
+  }
+
+  if (parts.minutes >= close.closeMinutes) {
+    return parts.date;
+  }
+
+  return getPreviousWeekdayBefore(parts.date, close.timeZone);
+}
+
+function getBackfillTargetDate(market: DailyOhlcMarket, requestedTo: string, now = new Date()) {
+  const close = marketDailyCloses[market];
+  const requestedTradingDate = getPreviousWeekdayOnOrBefore(requestedTo, close.timeZone);
+  const latestClosedDate = getLatestClosedMarketDate(market, now);
+
+  return requestedTradingDate <= latestClosedDate ? requestedTradingDate : latestClosedDate;
+}
+
 function toDailyOhlcBar(row: DailyOhlcRow): DailyOhlcBar {
   const hasManualAdjustment = Boolean(row.manualAdjustedAt);
   const hasProviderAdjustedOhlc =
@@ -57,7 +137,8 @@ function toDailyOhlcBar(row: DailyOhlcRow): DailyOhlcBar {
   const open = row.manualAdjustedOpen ?? (hasProviderAdjustedOhlc ? row.adjustedOpen : row.open);
   const high = row.manualAdjustedHigh ?? (hasProviderAdjustedOhlc ? row.adjustedHigh : row.high);
   const low = row.manualAdjustedLow ?? (hasProviderAdjustedOhlc ? row.adjustedLow : row.low);
-  const close = row.manualAdjustedClose ?? (hasProviderAdjustedOhlc ? row.adjustedClose : row.close);
+  const close =
+    row.manualAdjustedClose ?? (hasProviderAdjustedOhlc ? row.adjustedClose : row.close);
   const volume =
     row.manualAdjustedVolume ?? (hasProviderAdjustedOhlc ? row.adjustedVolume : row.volume);
   const hasEffectiveAdjustment = hasManualAdjustment || hasProviderAdjustedOhlc;
@@ -134,8 +215,17 @@ function getBackfillRange(input: {
   backfilledThrough?: Date | string | null;
   to: string;
 }) {
-  if (input.latestDate && toDateString(input.latestDate) >= input.to) {
-    return null;
+  const latestDate = input.latestDate ? toDateString(input.latestDate) : null;
+
+  if (latestDate) {
+    if (latestDate >= input.to) {
+      return null;
+    }
+
+    return {
+      from: addDaysToDateString(latestDate, 1),
+      to: input.to,
+    };
   }
 
   if (!input.backfilledThrough) {
@@ -305,7 +395,8 @@ export async function getCachedDailyOhlc(input: {
   to: string;
 }): Promise<DailyOhlcResponse> {
   const provider = getProvider(input.parsed);
-  const backfillRange = await getDailyOhlcBackfillRange(input.parsed.canonical, input.to);
+  const backfillTo = getBackfillTargetDate(input.parsed.market, input.to);
+  const backfillRange = await getDailyOhlcBackfillRange(input.parsed.canonical, backfillTo);
 
   if (backfillRange) {
     recordGatewayLog({
@@ -315,7 +406,7 @@ export async function getCachedDailyOhlc(input: {
       symbols: [input.parsed.canonical],
       metadata: {
         from: backfillRange.from,
-        to: input.to,
+        to: backfillRange.to,
         provider,
       },
     });
@@ -323,7 +414,7 @@ export async function getCachedDailyOhlc(input: {
     await backfillDailyOhlc({
       parsed: input.parsed,
       from: backfillRange.from,
-      to: input.to,
+      to: backfillRange.to,
     });
   }
 
@@ -376,7 +467,7 @@ export async function getCachedDailyOhlcBatch(input: {
       range: getBackfillRange({
         latestDate: latestDateBySymbol.get(parsed.canonical),
         backfilledThrough: backfilledThroughBySymbol.get(parsed.canonical),
-        to: input.to,
+        to: getBackfillTargetDate(parsed.market, input.to),
       }),
     }))
     .filter(
