@@ -55,6 +55,7 @@ describe("historical market data cache", () => {
     dbMocks.db.dailyOhlcBar.groupBy.mockReset();
     dbMocks.db.dailyOhlcBar.upsert.mockReset();
     dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockReset();
+    dbMocks.db.dailyOhlcBackfillStatus.findMany.mockReset();
     dbMocks.db.dailyOhlcBackfillStatus.upsert.mockReset();
     dbMocks.db.optionContractDaily.findMany.mockReset();
     dbMocks.db.optionContractDaily.upsert.mockReset();
@@ -320,14 +321,15 @@ describe("historical market data cache", () => {
     ]);
   });
 
-  it("does not refetch when cached bars cover the latest closed market date", async () => {
+  it("does not refetch recent cached bars while refresh status is fresh", async () => {
     vi.setSystemTime(new Date("2026-06-29T05:58:00.000Z"));
 
     dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
       date: new Date("2026-06-26T00:00:00.000Z"),
     });
     dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue({
-      backfilledThrough: new Date("2026-06-29T00:00:00.000Z"),
+      backfilledThrough: new Date("2026-06-26T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-29T05:30:00.000Z"),
     });
     dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([
       {
@@ -360,6 +362,78 @@ describe("historical market data cache", () => {
     expect(dbMocks.db.dailyOhlcBackfillStatus.upsert).not.toHaveBeenCalled();
   });
 
+  it("refetches recent cached bars when refresh status is stale", async () => {
+    vi.setSystemTime(new Date("2026-06-29T05:58:00.000Z"));
+
+    dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
+      date: new Date("2026-06-26T00:00:00.000Z"),
+    });
+    dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue({
+      backfilledThrough: new Date("2026-06-26T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-29T03:00:00.000Z"),
+    });
+    alphaMocks.fetchAlphaVantageDailyBars.mockResolvedValue([
+      {
+        date: "2026-06-24",
+        open: "101",
+        high: "102",
+        low: "100",
+        close: "101",
+        volume: "11",
+      },
+      {
+        date: "2026-06-25",
+        open: "102",
+        high: "103",
+        low: "101",
+        close: "102",
+        volume: "12",
+      },
+      {
+        date: "2026-06-26",
+        open: "103",
+        high: "104",
+        low: "102",
+        close: "103",
+        volume: "13",
+      },
+    ]);
+    dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([]);
+
+    const { getCachedDailyOhlc } = await import("./historical-cache.js");
+    await getCachedDailyOhlc({
+      parsed: {
+        market: "US",
+        canonical: "AAPL",
+        upstreamSymbol: "AAPL",
+      },
+      from: "2026-06-24",
+      to: "2026-06-29",
+    });
+
+    expect(alphaMocks.fetchAlphaVantageDailyBars).toHaveBeenCalledWith({
+      symbol: "AAPL",
+      from: "2026-06-24",
+      to: "2026-06-26",
+    });
+    expect(dbMocks.db.dailyOhlcBackfillStatus.upsert).toHaveBeenCalledWith({
+      where: {
+        symbol: "AAPL",
+      },
+      create: {
+        symbol: "AAPL",
+        market: "US",
+        provider: "alphavantage",
+        backfilledThrough: new Date("2026-06-26T00:00:00.000Z"),
+      },
+      update: {
+        market: "US",
+        provider: "alphavantage",
+        backfilledThrough: new Date("2026-06-26T00:00:00.000Z"),
+      },
+    });
+  });
+
   it("refetches stale cached bars when the watermark is ahead of the latest row", async () => {
     vi.setSystemTime(new Date("2026-06-29T05:58:00.000Z"));
 
@@ -368,6 +442,7 @@ describe("historical market data cache", () => {
     });
     dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue({
       backfilledThrough: new Date("2026-06-29T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-29T03:00:00.000Z"),
     });
     alphaMocks.fetchAlphaVantageDailyBars.mockResolvedValue([
       {
@@ -461,6 +536,7 @@ describe("historical market data cache", () => {
     });
     dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue({
       backfilledThrough: new Date("2026-06-17T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-18T00:00:00.000Z"),
     });
     alphaMocks.fetchAlphaVantageDailyBars.mockResolvedValue([
       {
@@ -501,14 +577,78 @@ describe("historical market data cache", () => {
     );
   });
 
+  it("includes recent overlap when cached bars are behind a stale recent target", async () => {
+    vi.setSystemTime(new Date("2026-07-02T05:58:00.000Z"));
+
+    dbMocks.db.dailyOhlcBar.findFirst.mockResolvedValue({
+      date: new Date("2026-06-30T00:00:00.000Z"),
+    });
+    dbMocks.db.dailyOhlcBackfillStatus.findUnique.mockResolvedValue({
+      backfilledThrough: new Date("2026-06-30T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-02T03:00:00.000Z"),
+    });
+    alphaMocks.fetchAlphaVantageDailyBars.mockResolvedValue([
+      {
+        date: "2026-06-29",
+        open: "160",
+        high: "161",
+        low: "159",
+        close: "160",
+        volume: "10",
+      },
+      {
+        date: "2026-06-30",
+        open: "161",
+        high: "162",
+        low: "158",
+        close: "159",
+        volume: "11",
+      },
+      {
+        date: "2026-07-01",
+        open: "159",
+        high: "160",
+        low: "158",
+        close: "159.54",
+        volume: "12",
+      },
+    ]);
+    dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([]);
+
+    const { getCachedDailyOhlc } = await import("./historical-cache.js");
+    await getCachedDailyOhlc({
+      parsed: {
+        market: "US",
+        canonical: "XLV",
+        upstreamSymbol: "XLV",
+      },
+      from: "2026-06-30",
+      to: "2026-07-02",
+    });
+
+    expect(alphaMocks.fetchAlphaVantageDailyBars).toHaveBeenCalledWith({
+      symbol: "XLV",
+      from: "2026-06-29",
+      to: "2026-07-01",
+    });
+  });
+
   it("batch loads OHLC cache state and response rows for multiple symbols", async () => {
     dbMocks.db.dailyOhlcBar.groupBy.mockResolvedValue([
       { symbol: "AAPL", _max: { date: new Date("2026-06-17T00:00:00.000Z") } },
       { symbol: "NVDA", _max: { date: new Date("2026-06-17T00:00:00.000Z") } },
     ]);
     dbMocks.db.dailyOhlcBackfillStatus.findMany.mockResolvedValue([
-      { symbol: "AAPL", backfilledThrough: new Date("2026-06-17T00:00:00.000Z") },
-      { symbol: "NVDA", backfilledThrough: new Date("2026-06-17T00:00:00.000Z") },
+      {
+        symbol: "AAPL",
+        backfilledThrough: new Date("2026-06-17T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-17T00:00:00.000Z"),
+      },
+      {
+        symbol: "NVDA",
+        backfilledThrough: new Date("2026-06-17T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-17T00:00:00.000Z"),
+      },
     ]);
     dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([
       {
@@ -569,6 +709,63 @@ describe("historical market data cache", () => {
       ["AAPL", 1],
       ["NVDA", 1],
     ]);
+  });
+
+  it("batch refreshes only symbols with stale recent OHLC status", async () => {
+    vi.setSystemTime(new Date("2026-06-29T05:58:00.000Z"));
+
+    dbMocks.db.dailyOhlcBar.groupBy.mockResolvedValue([
+      { symbol: "AAPL", _max: { date: new Date("2026-06-26T00:00:00.000Z") } },
+      { symbol: "NVDA", _max: { date: new Date("2026-06-26T00:00:00.000Z") } },
+    ]);
+    dbMocks.db.dailyOhlcBackfillStatus.findMany.mockResolvedValue([
+      {
+        symbol: "AAPL",
+        backfilledThrough: new Date("2026-06-26T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-29T03:00:00.000Z"),
+      },
+      {
+        symbol: "NVDA",
+        backfilledThrough: new Date("2026-06-26T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-29T05:30:00.000Z"),
+      },
+    ]);
+    alphaMocks.fetchAlphaVantageDailyBars.mockResolvedValue([
+      {
+        date: "2026-06-26",
+        open: "100",
+        high: "101",
+        low: "99",
+        close: "100",
+        volume: "10",
+      },
+    ]);
+    dbMocks.db.dailyOhlcBar.findMany.mockResolvedValue([]);
+
+    const { getCachedDailyOhlcBatch } = await import("./historical-cache.js");
+    await getCachedDailyOhlcBatch({
+      parsedSymbols: [
+        {
+          market: "US",
+          canonical: "AAPL",
+          upstreamSymbol: "AAPL",
+        },
+        {
+          market: "US",
+          canonical: "NVDA",
+          upstreamSymbol: "NVDA",
+        },
+      ],
+      from: "2026-06-24",
+      to: "2026-06-29",
+    });
+
+    expect(alphaMocks.fetchAlphaVantageDailyBars).toHaveBeenCalledTimes(1);
+    expect(alphaMocks.fetchAlphaVantageDailyBars).toHaveBeenCalledWith({
+      symbol: "AAPL",
+      from: "2026-06-24",
+      to: "2026-06-26",
+    });
   });
 
   it("backfills TSE daily OHLC with canonical symbols and J-Quants code", async () => {

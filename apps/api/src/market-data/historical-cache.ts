@@ -1,3 +1,4 @@
+import { dailyOhlcRecentRefreshMarketDays, dailyOhlcRecentRefreshTtlMs } from "../config.js";
 import { db, type Prisma } from "../db.js";
 import { fetchAlphaVantageDailyBars, fetchAlphaVantageOptions } from "../providers/alphavantage.js";
 import {
@@ -59,6 +60,10 @@ function addDaysToDateString(date: string, days: number) {
   return toDateString(value);
 }
 
+function minDateString(...dates: string[]) {
+  return dates.reduce((min, date) => (date < min ? date : min));
+}
+
 function getZonedParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -103,6 +108,16 @@ function getPreviousWeekdayBefore(date: string, timeZone: string) {
   return getPreviousWeekdayOnOrBefore(addDaysToDateString(date, -1), timeZone);
 }
 
+function getPreviousWeekdayByCount(date: string, timeZone: string, weekdays: number) {
+  let value = date;
+
+  for (let index = 0; index < weekdays; index += 1) {
+    value = getPreviousWeekdayBefore(value, timeZone);
+  }
+
+  return value;
+}
+
 function getLatestClosedMarketDate(market: DailyOhlcMarket, now = new Date()) {
   const close = marketDailyCloses[market];
   const parts = getZonedParts(now, close.timeZone);
@@ -124,6 +139,34 @@ function getBackfillTargetDate(market: DailyOhlcMarket, requestedTo: string, now
   const latestClosedDate = getLatestClosedMarketDate(market, now);
 
   return requestedTradingDate <= latestClosedDate ? requestedTradingDate : latestClosedDate;
+}
+
+function getRecentRefreshStartDate(market: DailyOhlcMarket, targetDate: string) {
+  const close = marketDailyCloses[market];
+  const marketDays = Math.max(1, Math.floor(dailyOhlcRecentRefreshMarketDays));
+
+  return getPreviousWeekdayByCount(targetDate, close.timeZone, marketDays - 1);
+}
+
+function isRecentRefreshTarget(market: DailyOhlcMarket, targetDate: string, now = new Date()) {
+  const latestClosedDate = getLatestClosedMarketDate(market, now);
+  const recentRefreshStartDate = getRecentRefreshStartDate(market, latestClosedDate);
+
+  return targetDate >= recentRefreshStartDate && targetDate <= latestClosedDate;
+}
+
+function isRecentRefreshStale(updatedAt: Date | string | null | undefined, now = new Date()) {
+  if (!updatedAt) {
+    return true;
+  }
+
+  const updatedAtMs = new Date(updatedAt).getTime();
+
+  if (!Number.isFinite(updatedAtMs)) {
+    return true;
+  }
+
+  return now.getTime() - updatedAtMs >= dailyOhlcRecentRefreshTtlMs;
 }
 
 function toDailyOhlcBar(row: DailyOhlcRow): DailyOhlcBar {
@@ -211,43 +254,52 @@ async function readDailyOhlcBarsBySymbol(symbols: string[], from: string, to: st
 }
 
 function getBackfillRange(input: {
+  market: DailyOhlcMarket;
   latestDate?: Date | string | null;
   backfilledThrough?: Date | string | null;
+  statusUpdatedAt?: Date | string | null;
   to: string;
+  now?: Date;
 }) {
   const latestDate = input.latestDate ? toDateString(input.latestDate) : null;
+  const now = input.now ?? new Date();
+  const missingRangeStart = (() => {
+    if (latestDate) {
+      return latestDate >= input.to ? null : addDaysToDateString(latestDate, 1);
+    }
 
-  if (latestDate) {
-    if (latestDate >= input.to) {
+    if (!input.backfilledThrough) {
+      return historicalBackfillStartDate;
+    }
+
+    const backfilledThrough = toDateString(input.backfilledThrough);
+
+    if (backfilledThrough >= input.to) {
       return null;
     }
 
-    return {
-      from: addDaysToDateString(latestDate, 1),
-      to: input.to,
-    };
-  }
+    return addDaysToDateString(backfilledThrough, 1);
+  })();
+  const recentRefreshStart =
+    isRecentRefreshTarget(input.market, input.to, now) &&
+    isRecentRefreshStale(input.statusUpdatedAt, now)
+      ? getRecentRefreshStartDate(input.market, input.to)
+      : null;
 
-  if (!input.backfilledThrough) {
-    return {
-      from: historicalBackfillStartDate,
-      to: input.to,
-    };
-  }
-
-  const backfilledThrough = toDateString(input.backfilledThrough);
-
-  if (backfilledThrough >= input.to) {
+  if (!missingRangeStart && !recentRefreshStart) {
     return null;
   }
 
   return {
-    from: addDaysToDateString(backfilledThrough, 1),
+    from: minDateString(
+      ...(missingRangeStart ? [missingRangeStart] : []),
+      ...(recentRefreshStart ? [recentRefreshStart] : []),
+    ),
     to: input.to,
   };
 }
 
-async function getDailyOhlcBackfillRange(symbol: string, to: string) {
+async function getDailyOhlcBackfillRange(symbol: string, market: DailyOhlcMarket, to: string) {
   const latest = await db.dailyOhlcBar.findFirst({
     where: {
       symbol,
@@ -266,12 +318,15 @@ async function getDailyOhlcBackfillRange(symbol: string, to: string) {
     },
     select: {
       backfilledThrough: true,
+      updatedAt: true,
     },
   });
 
   return getBackfillRange({
+    market,
     latestDate: latest?.date,
     backfilledThrough: status?.backfilledThrough,
+    statusUpdatedAt: status?.updatedAt,
     to,
   });
 }
@@ -396,7 +451,11 @@ export async function getCachedDailyOhlc(input: {
 }): Promise<DailyOhlcResponse> {
   const provider = getProvider(input.parsed);
   const backfillTo = getBackfillTargetDate(input.parsed.market, input.to);
-  const backfillRange = await getDailyOhlcBackfillRange(input.parsed.canonical, backfillTo);
+  const backfillRange = await getDailyOhlcBackfillRange(
+    input.parsed.canonical,
+    input.parsed.market,
+    backfillTo,
+  );
 
   if (backfillRange) {
     recordGatewayLog({
@@ -453,20 +512,21 @@ export async function getCachedDailyOhlcBatch(input: {
       select: {
         symbol: true,
         backfilledThrough: true,
+        updatedAt: true,
       },
     }),
   ]);
   const latestDateBySymbol = new Map(latestRows.map((row) => [row.symbol, row._max.date ?? null]));
-  const backfilledThroughBySymbol = new Map(
-    statuses.map((status) => [status.symbol, status.backfilledThrough]),
-  );
+  const statusBySymbol = new Map(statuses.map((status) => [status.symbol, status]));
   const backfills = input.parsedSymbols
     .map((parsed) => ({
       parsed,
       provider: getProvider(parsed),
       range: getBackfillRange({
+        market: parsed.market,
         latestDate: latestDateBySymbol.get(parsed.canonical),
-        backfilledThrough: backfilledThroughBySymbol.get(parsed.canonical),
+        backfilledThrough: statusBySymbol.get(parsed.canonical)?.backfilledThrough,
+        statusUpdatedAt: statusBySymbol.get(parsed.canonical)?.updatedAt,
         to: getBackfillTargetDate(parsed.market, input.to),
       }),
     }))

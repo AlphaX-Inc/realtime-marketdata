@@ -6,6 +6,21 @@ export const quoteClosedPollIntervalMs = Number(
 );
 export const staleAfterMs = Number(process.env.STALE_AFTER_MS ?? 5_000);
 
+function getPositiveNumber(value: string | undefined, fallback: number) {
+  const numeric = Number(value ?? fallback);
+
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+export const dailyOhlcRecentRefreshMarketDays = getPositiveNumber(
+  process.env.DAILY_OHLC_RECENT_REFRESH_MARKET_DAYS,
+  3,
+);
+export const dailyOhlcRecentRefreshTtlMs = getPositiveNumber(
+  process.env.DAILY_OHLC_RECENT_REFRESH_TTL_MS,
+  7_200_000,
+);
+
 export const twelveDataApiKey = process.env.TWELVEDATA_API_KEY;
 export const twelveDataRestBaseUrl =
   process.env.TWELVEDATA_REST_BASE_URL ?? "https://api.twelvedata.com";
