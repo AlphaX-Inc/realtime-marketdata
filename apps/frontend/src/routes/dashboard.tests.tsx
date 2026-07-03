@@ -40,8 +40,23 @@ type TestState = {
   error?: string;
 };
 
-type TestId = "health" | "ohlc" | "dailyOhlc" | "usOptions" | "jpOptions" | "stockSplits";
-type TestSection = "ohlc" | "dailyOhlc" | "usOptions" | "jpOptions" | "stockSplits" | "webSocket";
+type TestId =
+  | "health"
+  | "ohlc"
+  | "dailyOhlc"
+  | "usOptions"
+  | "jpOptions"
+  | "stockSplits"
+  | "priceSelection";
+type TestSection =
+  | "ohlc"
+  | "dailyOhlc"
+  | "usOptions"
+  | "jpOptions"
+  | "stockSplits"
+  | "priceSelection"
+  | "webSocket";
+type RestTestId = Exclude<TestId, "priceSelection">;
 
 const initialTests: Record<TestId, TestState> = {
   health: { status: "idle" },
@@ -50,6 +65,7 @@ const initialTests: Record<TestId, TestState> = {
   usOptions: { status: "idle" },
   jpOptions: { status: "idle" },
   stockSplits: { status: "idle" },
+  priceSelection: { status: "idle" },
 };
 
 const testSections = [
@@ -58,6 +74,7 @@ const testSections = [
   ["usOptions", "US options"],
   ["jpOptions", "JP options"],
   ["stockSplits", "Stock splits"],
+  ["priceSelection", "Price selection"],
   ["webSocket", "WebSocket"],
 ] as const satisfies readonly [TestSection, string][];
 const testSectionValues = new Set<TestSection>(testSections.map(([section]) => section));
@@ -119,6 +136,19 @@ function isTestSection(value: unknown): value is TestSection {
   return typeof value === "string" && testSectionValues.has(value as TestSection);
 }
 
+function toNumber(value: unknown) {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function pricesMatch(left: unknown, right: unknown) {
+  const leftNumber = toNumber(left);
+  const rightNumber = toNumber(right);
+
+  return leftNumber !== null && rightNumber !== null && Math.abs(leftNumber - rightNumber) < 0.0001;
+}
+
 function TestResult({ state }: { state: TestState }) {
   const payload =
     state.status === "error"
@@ -162,6 +192,8 @@ function TestsPage() {
   const [stockSplitFrom, setStockSplitFrom] = useState("2025-01-01");
   const [stockSplitTo, setStockSplitTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [tests, setTests] = useState<Record<TestId, TestState>>(initialTests);
+  const [priceSelectionSymbol, setPriceSelectionSymbol] = useState("SNDK");
+  const [priceSelectionExpectedState, setPriceSelectionExpectedState] = useState("closed");
   const [wsSymbols, setWsSymbols] = useState("AAPL,TSE:7203");
   const [wsStatus, setWsStatus] = useState<"idle" | "connecting" | "open" | "closed" | "error">(
     "idle",
@@ -241,7 +273,7 @@ function TestsPage() {
     ],
   );
 
-  async function runRestTest(id: TestId, requiresKey = true) {
+  async function runRestTest(id: RestTestId, requiresKey = true) {
     if (requiresKey && !apiKey.trim()) {
       setTests((current) => ({
         ...current,
@@ -341,6 +373,148 @@ function TestsPage() {
     wsRef.current?.close();
     wsRef.current = null;
     setWsStatus("closed");
+  }
+
+  function runPriceSelectionTest() {
+    if (!apiKey.trim()) {
+      setTests((current) => ({
+        ...current,
+        priceSelection: {
+          status: "error",
+          error: "Service API key is required for this endpoint.",
+        },
+      }));
+      return;
+    }
+
+    const symbol = priceSelectionSymbol.trim().toUpperCase();
+
+    if (!symbol) {
+      setTests((current) => ({
+        ...current,
+        priceSelection: {
+          status: "error",
+          error: "Symbol is required.",
+        },
+      }));
+      return;
+    }
+
+    const startedAt = performance.now();
+    setTests((current) => ({
+      ...current,
+      priceSelection: { status: "running" },
+    }));
+
+    const socket = new WebSocket(buildWsUrl(apiKey.trim()));
+    let finished = false;
+    const timeout = window.setTimeout(() => {
+      finish({
+        status: "error",
+        durationMs: Math.round(performance.now() - startedAt),
+        error: "Timed out waiting for a price message.",
+      });
+    }, 15_000);
+
+    function finish(state: TestState) {
+      if (finished) {
+        return;
+      }
+
+      finished = true;
+      window.clearTimeout(timeout);
+      socket.close();
+      setTests((current) => ({
+        ...current,
+        priceSelection: state,
+      }));
+    }
+
+    socket.addEventListener("open", () => {
+      socket.send(
+        JSON.stringify({
+          type: "subscribe",
+          symbols: [symbol],
+        }),
+      );
+    });
+
+    socket.addEventListener("message", (event) => {
+      let message: unknown;
+
+      try {
+        message = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
+      const payload = message as {
+        type?: string;
+        data?: {
+          symbol?: string;
+          price?: string | number;
+          close?: string | number | null;
+          marketState?: string;
+          source?: string;
+          provider?: string;
+          stale?: boolean;
+          timestamp?: number;
+        };
+      };
+      const data = payload.data;
+
+      if (payload.type !== "price" || data?.symbol !== symbol) {
+        return;
+      }
+
+      const body = {
+        symbol,
+        expectedMarketState: priceSelectionExpectedState,
+        marketState: data.marketState,
+        price: data.price,
+        close: data.close,
+        matchesClose: pricesMatch(data.price, data.close),
+        source: data.source,
+        provider: data.provider,
+        stale: data.stale,
+        timestamp: data.timestamp,
+      };
+      const durationMs = Math.round(performance.now() - startedAt);
+
+      if (data.marketState !== priceSelectionExpectedState) {
+        finish({
+          status: "error",
+          durationMs,
+          body,
+          error: `Expected marketState=${priceSelectionExpectedState}, got ${data.marketState}`,
+        });
+        return;
+      }
+
+      if (priceSelectionExpectedState === "closed" && !body.matchesClose) {
+        finish({
+          status: "error",
+          durationMs,
+          body,
+          error: "Closed-market selected price must equal quote close.",
+        });
+        return;
+      }
+
+      finish({
+        status: "success",
+        durationMs,
+        body,
+      });
+    });
+
+    socket.addEventListener("error", () => {
+      finish({
+        status: "error",
+        durationMs: Math.round(performance.now() - startedAt),
+        error: "WebSocket failed.",
+      });
+    });
   }
 
   return (
@@ -654,6 +828,48 @@ function TestsPage() {
             </Button>
             <TestResult state={tests.stockSplits} />
           </CardContent>
+          </Card>
+        ) : null}
+
+        {activeSection === "priceSelection" ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Gateway price selection</CardTitle>
+              <CardDescription>
+                Opens `/ws/prices` and verifies the selected price matches the expected market state.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-[1fr_1fr]">
+                <div className="grid gap-2">
+                  <Label htmlFor="price-selection-symbol">Symbol</Label>
+                  <Input
+                    id="price-selection-symbol"
+                    value={priceSelectionSymbol}
+                    onChange={(event) => setPriceSelectionSymbol(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="price-selection-market-state">Expected market state</Label>
+                  <select
+                    id="price-selection-market-state"
+                    className="flex h-10 w-full rounded-md border border-input/80 bg-card/80 px-3 py-2 text-sm text-foreground shadow-[0_1px_0_hsl(0_0%_100%_/_0.8)_inset] transition-[border-color,box-shadow,background-color] focus-visible:border-primary/50 focus-visible:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/10"
+                    value={priceSelectionExpectedState}
+                    onChange={(event) => setPriceSelectionExpectedState(event.target.value)}
+                  >
+                    <option value="closed">closed</option>
+                    <option value="pre">pre</option>
+                    <option value="regular">regular</option>
+                    <option value="post">post</option>
+                  </select>
+                </div>
+              </div>
+              <Button type="button" onClick={runPriceSelectionTest}>
+                <Lightning className="size-4" />
+                Run Price Selection
+              </Button>
+              <TestResult state={tests.priceSelection} />
+            </CardContent>
           </Card>
         ) : null}
 

@@ -32,8 +32,11 @@ export function buildSnapshotFromQuote(
 ): CachedPriceSnapshot | null {
   const now = options.now ?? Date.now();
   const regularPrice = options.latestTickPrice ?? quote.close;
-  const usesExtendedPrice = marketState !== "regular" && Boolean(quote.extended_price);
-  const nonRegularPrice = quote.extended_price ?? quote.close ?? quote.previous_close;
+  const usesExtendedPrice =
+    (marketState === "pre" || marketState === "post") && Boolean(quote.extended_price);
+  const nonRegularPrice = usesExtendedPrice
+    ? quote.extended_price
+    : (quote.close ?? quote.previous_close);
   const price = marketState === "regular" ? regularPrice : nonRegularPrice;
   const timestamp =
     marketState === "regular"

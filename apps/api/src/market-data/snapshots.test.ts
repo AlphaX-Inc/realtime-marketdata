@@ -44,15 +44,15 @@ describe("snapshot normalization", () => {
     expect(snapshot?.timestamp).toBe(1_760_000_100);
   });
 
-  it("uses extended price for closed market when available", () => {
+  it("uses close for closed market even when extended price is available", () => {
     const snapshot = buildSnapshotFromQuote("AAPL", quote, "closed", { now: 1000 });
 
-    expect(snapshot?.price).toBe("190.12");
+    expect(snapshot?.price).toBe("189.50");
     expect(snapshot?.close).toBe("189.50");
     expect(snapshot?.previousClose).toBe("187.20");
-    expect(snapshot?.change).toBe("2.92");
-    expect(snapshot?.percentChange).toBe("1.56");
-    expect(snapshot?.timestamp).toBe(1_760_000_100);
+    expect(snapshot?.change).toBe("2.30");
+    expect(snapshot?.percentChange).toBe("1.22");
+    expect(snapshot?.timestamp).toBe(1_760_000_000);
   });
 
   it("falls back to close for closed market without extended price", () => {
