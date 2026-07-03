@@ -17,4 +17,8 @@ describe("getUsMarketState", () => {
   it("returns closed for weekend", () => {
     expect(getUsMarketState(new Date("2026-05-16T16:00:00.000Z"))).toBe("closed");
   });
+
+  it("returns closed for Independence Day observed", () => {
+    expect(getUsMarketState(new Date("2026-07-03T14:00:00.000Z"))).toBe("closed");
+  });
 });
