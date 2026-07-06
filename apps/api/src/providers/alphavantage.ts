@@ -1,4 +1,10 @@
-import { alphaVantageApiKey, alphaVantageBaseUrl } from "../config.js";
+import {
+  alphaVantageApiKey,
+  alphaVantageBaseUrl,
+  alphaVantageMaxRetries,
+  alphaVantageMaxRps,
+  alphaVantageRetryBaseDelayMs,
+} from "../config.js";
 import type { DailyOhlcBar, OptionsResponse } from "../market-data/types.js";
 
 type AlphaVantageDailyResponse = {
@@ -38,7 +44,27 @@ function requireApiKey() {
   return alphaVantageApiKey;
 }
 
-async function fetchAlphaVantage<T>(params: Record<string, string | undefined>) {
+class AlphaVantageRateLimitError extends Error {}
+
+function createRateLimiter(maxPerSecond: number) {
+  const intervalMs = 1000 / maxPerSecond;
+  let nextSlotAt = 0;
+
+  return async () => {
+    const now = Date.now();
+    const scheduledAt = Math.max(now, nextSlotAt);
+    nextSlotAt = scheduledAt + intervalMs;
+
+    const waitMs = scheduledAt - now;
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  };
+}
+
+const acquireRateSlot = createRateLimiter(alphaVantageMaxRps);
+
+async function fetchAlphaVantageOnce<T>(params: Record<string, string | undefined>) {
   const url = new URL("/query", alphaVantageBaseUrl);
 
   for (const [key, value] of Object.entries(params)) {
@@ -48,6 +74,8 @@ async function fetchAlphaVantage<T>(params: Record<string, string | undefined>) 
   }
 
   url.searchParams.set("apikey", requireApiKey());
+
+  await acquireRateSlot();
 
   const response = await fetch(url);
 
@@ -63,10 +91,34 @@ async function fetchAlphaVantage<T>(params: Record<string, string | undefined>) 
   }
 
   if (json.Note || json.Information) {
-    throw new Error(`Alpha Vantage API failed: ${json.Note ?? json.Information}`);
+    throw new AlphaVantageRateLimitError(
+      `Alpha Vantage API failed: ${json.Note ?? json.Information}`,
+    );
   }
 
   return json;
+}
+
+async function fetchAlphaVantage<T>(params: Record<string, string | undefined>) {
+  const maxRetries = Math.floor(alphaVantageMaxRetries);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await fetchAlphaVantageOnce<T>(params);
+    } catch (error) {
+      lastError = error;
+
+      if (!(error instanceof AlphaVantageRateLimitError) || attempt === maxRetries) {
+        throw error;
+      }
+
+      const backoffMs = alphaVantageRetryBaseDelayMs * 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+
+  throw lastError;
 }
 
 function toNumber(value: string | undefined) {
