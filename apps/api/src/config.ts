@@ -37,3 +37,9 @@ export const jQuantsClosedPollIntervalMs = Number(
 export const alphaVantageApiKey = process.env.ALPHAVANTAGE_API_KEY;
 export const alphaVantageBaseUrl =
   process.env.ALPHAVANTAGE_BASE_URL ?? "https://www.alphavantage.co";
+export const alphaVantageMaxRps = getPositiveNumber(process.env.ALPHAVANTAGE_MAX_RPS, 10);
+export const alphaVantageMaxRetries = getPositiveNumber(process.env.ALPHAVANTAGE_MAX_RETRIES, 2);
+export const alphaVantageRetryBaseDelayMs = getPositiveNumber(
+  process.env.ALPHAVANTAGE_RETRY_BASE_DELAY_MS,
+  500,
+);
