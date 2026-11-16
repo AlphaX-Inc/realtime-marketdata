@@ -86,6 +86,28 @@ curl -X POST -H "content-type: application/json" -H "x-api-key: <api-key>" \
 
 US and JP options responses are cached by market, symbol, date, and contract ID.
 
+## Bigdata.com MCP proxy
+
+`/bigdata/mcp` is a caching proxy for the [Bigdata MCP](https://docs.bigdata.com/mcp-reference/introduction)
+server (`BIGDATA_MCP_URL`, default `https://mcp.bigdata.com/`). Point an existing MCP client at it
+in place of `https://mcp.bigdata.com/` and keep sending the same `Authorization: Bearer <bigdata-key>`
+header. The token is forwarded upstream as-is; no service API key is needed.
+
+```sh
+curl -i -X POST -H "Authorization: Bearer <bigdata-key>" \
+  -H "Accept: application/json, text/event-stream" -H "content-type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"find_securities","arguments":{"query":"NVDA"}}}' \
+  "http://localhost:8000/bigdata/mcp"
+```
+
+`tools/call` results for the stateless data tools (`find_securities`, `bigdata_search`, the
+tearsheets, and so on, listed in `cachedMcpTools`) are cached in Redis under `bigdata:cache:*` for
+24 hours. The cache key covers the tool name, the arguments (key order ignored), and the Bearer
+token, so different tokens never share cached results. Tool errors and failed responses are not
+cached. Every other request passes straight through: `initialize`, `tools/list`, notifications,
+SSE streams, and account-state tools such as watchlists or monitors. The `x-bigdata-cache: HIT|MISS`
+response header marks cacheable calls.
+
 Run the worker separately so it owns the single Twelve Data upstream connection:
 
 ```sh

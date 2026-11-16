@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { getCurrentUser } from "../auth/session.js";
 import { recordGatewayLog } from "../services/gateway-logs.js";
 import { validateServiceApiKey } from "../services/service-api-keys.js";
+import { proxyBigdataMcp } from "./bigdata-mcp-proxy.js";
 import {
   getCachedDailyOhlc,
   getCachedDailyOhlcBatch,
@@ -310,5 +311,14 @@ marketDataRoutes.post("/stock-splits/:id/refresh", async (c) => {
     return c.json(await refreshStockSplitFromProvider(c.req.param("id")));
   } catch (error) {
     return c.json({ message: serializeError(error) }, getStockSplitErrorStatus(error));
+  }
+});
+
+// Auth is the caller's own Bigdata Bearer token, forwarded upstream; the cache is keyed per token.
+marketDataRoutes.all("/bigdata/mcp", async (c) => {
+  try {
+    return await proxyBigdataMcp(c.req.raw);
+  } catch (error) {
+    return c.json({ message: serializeError(error) }, 502);
   }
 });

@@ -43,3 +43,5 @@ export const alphaVantageRetryBaseDelayMs = getPositiveNumber(
   process.env.ALPHAVANTAGE_RETRY_BASE_DELAY_MS,
   500,
 );
+
+export const bigdataMcpUrl = process.env.BIGDATA_MCP_URL ?? "https://mcp.bigdata.com/";
