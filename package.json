@@ -18,7 +18,8 @@
     "db:generate": "pnpm --filter @realtime-pricing/db db:generate",
     "db:migrate": "pnpm --filter @realtime-pricing/db db:migrate",
     "db:deploy": "pnpm --filter @realtime-pricing/db db:deploy",
-    "db:studio": "pnpm --filter @realtime-pricing/db db:studio"
+    "db:studio": "pnpm --filter @realtime-pricing/db db:studio",
+    "create-admin": "pnpm --filter @realtime-pricing/api create-admin"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",

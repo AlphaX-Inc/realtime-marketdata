@@ -155,6 +155,20 @@ API_KEY_ENCRYPTION_SECRET="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 Then open `http://localhost:3000/register` to create the first admin account. Public
 registration closes after the first user; additional users are created from the dashboard.
 
+Locked out (can't log in as any admin)? Create a new admin from the server. It never modifies
+existing users and reads the password from stdin:
+
+```sh
+pnpm build && pnpm create-admin you@example.com "Your Name"
+
+# prod (on the VM, after ./update.sh)
+sudo systemd-run --pty --wait --quiet \
+  -p User=marketdata -p WorkingDirectory=/opt/realtime-marketdata/current \
+  -p EnvironmentFile=/etc/realtime-marketdata/runtime.env \
+  -p EnvironmentFile=/etc/realtime-marketdata/deployment.env \
+  node apps/api/dist/scripts/create-admin.js you@example.com "Your Name"
+```
+
 ## Production Compose
 
 `docker-compose.yml` builds three app targets:
