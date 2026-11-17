@@ -1,0 +1,591 @@
+---
+- name: Configure and deploy the native realtime market data stack
+  hosts: all
+  become: true
+  vars:
+    tailscale_auth_key: "{{ lookup('env', 'TS_AUTHKEY') }}"
+    repository_root: "{{ playbook_dir }}/../.."
+    release_id: "{{ lookup('pipe', 'git -C ' ~ (playbook_dir ~ '/../..' | quote) ~ ' rev-parse --short=12 HEAD') }}"
+    local_archive: "/tmp/{{ app_name }}-{{ release_id }}.tar.gz"
+    remote_archive: "/tmp/{{ app_name }}-{{ release_id }}.tar.gz"
+    release_path: "{{ app_root }}/releases/{{ release_id }}"
+
+  pre_tasks:
+    - name: Validate required deployment inputs
+      ansible.builtin.assert:
+        that:
+          - key_vault_name is defined
+          - key_vault_name | length >= 3
+          - release_keep_count | int >= 1
+        fail_msg: >-
+          Set key_vault_name in inventory.yml before running this playbook.
+      no_log: true
+
+  tasks:
+    - name: Install repository prerequisites
+      ansible.builtin.apt:
+        name:
+          - acl
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - jq
+          - python3
+          - python3-debian
+          - rsync
+        state: present
+        update_cache: true
+
+    - name: Create the APT keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the NodeSource signing key
+      ansible.builtin.get_url:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        dest: /etc/apt/keyrings/nodesource.asc
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure the Node.js 24 repository
+      ansible.builtin.deb822_repository:
+        name: nodesource
+        types: [deb]
+        uris: [https://deb.nodesource.com/node_24.x]
+        suites: [nodistro]
+        components: [main]
+        signed_by: /etc/apt/keyrings/nodesource.asc
+        state: present
+
+    - name: Install the PostgreSQL signing key
+      ansible.builtin.get_url:
+        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        dest: /etc/apt/keyrings/postgresql.asc
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure the PostgreSQL 17 repository
+      ansible.builtin.deb822_repository:
+        name: postgresql
+        types: [deb]
+        uris: [https://apt.postgresql.org/pub/repos/apt]
+        suites: [noble-pgdg]
+        components: [main]
+        signed_by: /etc/apt/keyrings/postgresql.asc
+        state: present
+
+    - name: Install the Tailscale signing key
+      ansible.builtin.get_url:
+        url: https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
+        dest: /etc/apt/keyrings/tailscale-archive-keyring.gpg
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure the Tailscale repository
+      ansible.builtin.deb822_repository:
+        name: tailscale
+        types: [deb]
+        uris: [https://pkgs.tailscale.com/stable/ubuntu]
+        suites: [noble]
+        components: [main]
+        signed_by: /etc/apt/keyrings/tailscale-archive-keyring.gpg
+        state: present
+
+    - name: Install native runtime services
+      ansible.builtin.apt:
+        name:
+          - caddy
+          - nodejs
+          - postgresql-17
+          - postgresql-client-17
+          - redis-server
+          - tailscale
+        state: present
+        update_cache: true
+
+    - name: Enable Corepack
+      ansible.builtin.command: corepack enable
+      args:
+        creates: /usr/bin/pnpm
+
+    - name: Create the application group
+      ansible.builtin.group:
+        name: "{{ app_group }}"
+        system: true
+
+    - name: Create the application user
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        group: "{{ app_group }}"
+        home: /var/cache/realtime-marketdata
+        shell: /usr/sbin/nologin
+        system: true
+        create_home: false
+
+    - name: Create application directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ app_root }}", owner: root, group: "{{ app_group }}", mode: "0755" }
+        - { path: "{{ app_root }}/releases", owner: root, group: "{{ app_group }}", mode: "0755" }
+        - { path: /etc/realtime-marketdata, owner: root, group: "{{ app_group }}", mode: "0750" }
+        - { path: /var/cache/realtime-marketdata, owner: "{{ app_user }}", group: "{{ app_group }}", mode: "0750" }
+
+    - name: Check the swap file
+      ansible.builtin.stat:
+        path: /swapfile
+      register: swap_file
+
+    - name: Allocate the swap file
+      ansible.builtin.command:
+        argv: [fallocate, -l, "{{ swap_size_mb }}M", /swapfile]
+      when: not swap_file.stat.exists
+      changed_when: true
+
+    - name: Secure the swap file
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Format the swap file
+      ansible.builtin.command: mkswap /swapfile
+      when: not swap_file.stat.exists
+      changed_when: true
+
+    - name: Persist swap in fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: "^/swapfile\\s"
+        line: "/swapfile none swap sw 0 0"
+        state: present
+
+    - name: Check active swap devices
+      ansible.builtin.command: swapon --show=NAME --noheadings
+      register: active_swap
+      changed_when: false
+
+    - name: Activate swap now
+      ansible.builtin.command: swapon /swapfile
+      when: "'/swapfile' not in active_swap.stdout_lines"
+      changed_when: true
+
+    - name: Enable the Tailscale daemon
+      ansible.builtin.systemd_service:
+        name: tailscaled
+        enabled: true
+        state: started
+
+    - name: Check Tailscale connection state
+      ansible.builtin.command: tailscale status --json
+      register: tailscale_status
+      changed_when: false
+      failed_when: false
+
+    - name: Default Tailscale connection state to disconnected
+      ansible.builtin.set_fact:
+        tailscale_running: false
+
+    - name: Record a connected Tailscale node
+      ansible.builtin.set_fact:
+        tailscale_running: "{{ (tailscale_status.stdout | from_json).BackendState == 'Running' }}"
+      when: tailscale_status.rc == 0
+
+    - name: Require an authentication key for a new Tailscale node
+      ansible.builtin.assert:
+        that:
+          - tailscale_auth_key | length > 0
+        fail_msg: Export a one-time tagged Tailscale key as TS_AUTHKEY for the initial deployment.
+      when: not tailscale_running
+      no_log: true
+
+    - name: Join the production tailnet
+      ansible.builtin.command: >-
+        tailscale up
+        --auth-key={{ tailscale_auth_key }}
+        --hostname={{ tailscale_hostname }}
+        {{ '--advertise-tags=' ~ tailscale_tags if tailscale_tags | length > 0 else '' }}
+        {{ '--ssh' if tailscale_ssh else '' }}
+      when: not tailscale_running
+      changed_when: true
+      no_log: true
+
+    - name: Read the Tailscale SSH preference
+      ansible.builtin.command: tailscale get ssh
+      register: tailscale_ssh_preference
+      changed_when: false
+
+    - name: Enforce the Tailscale SSH preference
+      ansible.builtin.command: "tailscale set --ssh={{ tailscale_ssh | ternary('true', 'false') }}"
+      when: (tailscale_ssh_preference.stdout | trim | bool) != tailscale_ssh
+      changed_when: true
+
+    - name: Read the Tailscale DNS name
+      ansible.builtin.command: tailscale status --json
+      register: connected_tailscale_status
+      changed_when: false
+
+    - name: Set the private application origin
+      ansible.builtin.set_fact:
+        tailscale_dns_name: "{{ (connected_tailscale_status.stdout | from_json).Self.DNSName | regex_replace('\\.$', '') }}"
+        frontend_origin: "https://{{ (connected_tailscale_status.stdout | from_json).Self.DNSName | regex_replace('\\.$', '') }}"
+
+    - name: Configure PostgreSQL to listen only on localhost
+      ansible.builtin.lineinfile:
+        path: /etc/postgresql/17/main/postgresql.conf
+        regexp: "^#?listen_addresses\\s*="
+        line: "listen_addresses = '127.0.0.1'"
+      notify: Restart PostgreSQL
+
+    - name: Configure the PostgreSQL port
+      ansible.builtin.lineinfile:
+        path: /etc/postgresql/17/main/postgresql.conf
+        regexp: "^#?port\\s*="
+        line: "port = {{ postgres_port }}"
+      notify: Restart PostgreSQL
+
+    - name: Configure Redis to listen only on localhost
+      ansible.builtin.lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: "^bind "
+        line: "bind 127.0.0.1 ::1"
+      notify: Restart Redis
+
+    - name: Configure the Redis port
+      ansible.builtin.lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: "^port "
+        line: "port {{ redis_port }}"
+      notify: Restart Redis
+
+    - name: Keep Redis protected mode enabled
+      ansible.builtin.lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: "^protected-mode "
+        line: "protected-mode yes"
+      notify: Restart Redis
+
+    - name: Enable Redis append-only persistence
+      ansible.builtin.lineinfile:
+        path: /etc/redis/redis.conf
+        regexp: "^appendonly "
+        line: "appendonly yes"
+      notify: Restart Redis
+
+    - name: Apply database and cache configuration
+      ansible.builtin.meta: flush_handlers
+
+    - name: Install the Key Vault environment fetcher
+      ansible.builtin.template:
+        src: fetch-realtime-marketdata-env.sh.j2
+        dest: /usr/local/sbin/fetch-realtime-marketdata-env
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Install the PostgreSQL configuration helper
+      ansible.builtin.copy:
+        src: configure-postgres.py
+        dest: /usr/local/sbin/configure-realtime-marketdata-postgres
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Install the secret fetch service
+      ansible.builtin.template:
+        src: realtime-marketdata-secrets.service.j2
+        dest: /etc/systemd/system/realtime-marketdata-secrets.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd
+
+    - name: Make the secret service available
+      ansible.builtin.meta: flush_handlers
+
+    - name: Fetch the runtime environment from Key Vault
+      ansible.builtin.systemd_service:
+        name: realtime-marketdata-secrets.service
+        state: restarted
+      register: secret_fetch
+      retries: 12
+      delay: 10
+      until: secret_fetch is succeeded
+      no_log: true
+
+    - name: Configure the PostgreSQL role and database from DATABASE_URL
+      ansible.builtin.command: /usr/local/sbin/configure-realtime-marketdata-postgres
+      changed_when: true
+      no_log: true
+
+    - name: Write deployment-specific environment overrides
+      ansible.builtin.copy:
+        dest: "{{ deployment_env_path }}"
+        owner: root
+        group: "{{ app_group }}"
+        mode: "0640"
+        content: |
+          NODE_ENV=production
+          API_HOST={{ api_host }}
+          API_PORT={{ api_port }}
+          FRONTEND_ORIGIN={{ frontend_origin }}
+          VITE_API_BASE_URL=/api
+          COREPACK_HOME=/var/cache/realtime-marketdata/corepack
+          COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
+    - name: Build a source archive on the control machine
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ repository_root }}"
+          - archive
+          - --format=tar.gz
+          - "--output={{ local_archive }}"
+          - HEAD
+      delegate_to: localhost
+      become: false
+      changed_when: true
+
+    - name: Check whether this release is already built
+      ansible.builtin.stat:
+        path: "{{ release_path }}/.native-build-complete"
+      register: release_marker
+
+    - name: Upload the source archive
+      ansible.builtin.copy:
+        src: "{{ local_archive }}"
+        dest: "{{ remote_archive }}"
+        owner: root
+        group: root
+        mode: "0600"
+      when: not release_marker.stat.exists
+
+    - name: Create the release directory
+      ansible.builtin.file:
+        path: "{{ release_path }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: "0755"
+      when: not release_marker.stat.exists
+
+    - name: Extract the release
+      ansible.builtin.unarchive:
+        src: "{{ remote_archive }}"
+        dest: "{{ release_path }}"
+        remote_src: true
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+      when: not release_marker.stat.exists
+
+    - name: Install locked JavaScript dependencies
+      ansible.builtin.command: pnpm install --frozen-lockfile --store-dir /var/cache/realtime-marketdata/pnpm-store
+      args:
+        chdir: "{{ release_path }}"
+      become: true
+      become_user: "{{ app_user }}"
+      environment:
+        COREPACK_HOME: /var/cache/realtime-marketdata/corepack
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        NODE_OPTIONS: --max-old-space-size=2048
+      when: not release_marker.stat.exists
+      changed_when: true
+
+    - name: Generate the Prisma client
+      ansible.builtin.command: pnpm db:generate
+      args:
+        chdir: "{{ release_path }}"
+      become: true
+      become_user: "{{ app_user }}"
+      environment:
+        COREPACK_HOME: /var/cache/realtime-marketdata/corepack
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        DATABASE_URL: postgresql://unused:unused@127.0.0.1:55432/unused
+        NODE_OPTIONS: --max-old-space-size=2048
+      when: not release_marker.stat.exists
+      changed_when: true
+
+    - name: Build the production application
+      ansible.builtin.command: pnpm build
+      args:
+        chdir: "{{ release_path }}"
+      become: true
+      become_user: "{{ app_user }}"
+      environment:
+        COREPACK_HOME: /var/cache/realtime-marketdata/corepack
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        DATABASE_URL: postgresql://unused:unused@127.0.0.1:55432/unused
+        VITE_API_BASE_URL: /api
+        NODE_OPTIONS: --max-old-space-size=2048
+      when: not release_marker.stat.exists
+      changed_when: true
+
+    - name: Mark the release as built
+      ansible.builtin.file:
+        path: "{{ release_path }}/.native-build-complete"
+        state: touch
+        owner: root
+        group: "{{ app_group }}"
+        mode: "0644"
+      when: not release_marker.stat.exists
+
+    - name: Seal built release ownership
+      ansible.builtin.file:
+        path: "{{ release_path }}"
+        owner: root
+        group: "{{ app_group }}"
+        recurse: true
+      when: not release_marker.stat.exists
+
+    - name: Activate the release
+      ansible.builtin.file:
+        src: "{{ release_path }}"
+        dest: "{{ app_root }}/current"
+        state: link
+        force: true
+
+    - name: Install application systemd services
+      ansible.builtin.template:
+        src: "{{ item }}.service.j2"
+        dest: "/etc/systemd/system/{{ item }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - realtime-marketdata-api
+        - realtime-marketdata-worker
+        - realtime-marketdata-migrate
+      notify: Reload systemd
+
+    - name: Configure Caddy
+      ansible.builtin.template:
+        src: Caddyfile.j2
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: caddy
+        mode: "0644"
+      notify: Reload Caddy
+
+    - name: Validate the Caddy configuration
+      ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
+      changed_when: false
+
+    - name: Load the new systemd units
+      ansible.builtin.meta: flush_handlers
+
+    - name: Apply database migrations
+      ansible.builtin.systemd_service:
+        name: realtime-marketdata-migrate.service
+        state: started
+
+    - name: Enable and restart the application services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: restarted
+      loop:
+        - realtime-marketdata-api.service
+        - realtime-marketdata-worker.service
+        - caddy.service
+
+    - name: Expose Caddy privately through Tailscale Serve
+      ansible.builtin.command: "tailscale serve --bg http://127.0.0.1:{{ caddy_port }}"
+      register: tailscale_serve
+      changed_when: "'Available within your tailnet' in tailscale_serve.stdout"
+
+    - name: Verify the API health endpoint
+      ansible.builtin.uri:
+        url: "http://{{ api_host }}:{{ api_port }}/health"
+        return_content: true
+        status_code: 200
+      register: api_health
+      retries: 10
+      delay: 3
+      until: api_health.status == 200
+
+    - name: Verify the Caddy health endpoint
+      ansible.builtin.uri:
+        url: "http://{{ caddy_host }}:{{ caddy_port }}/health"
+        return_content: true
+        status_code: 200
+
+    - name: Verify the private Tailscale HTTPS endpoint
+      ansible.builtin.uri:
+        url: "{{ frontend_origin }}/health"
+        return_content: true
+        status_code: 200
+        validate_certs: true
+      register: tailscale_health
+      retries: 10
+      delay: 3
+      until: tailscale_health.status == 200
+
+    - name: Find deployed releases
+      ansible.builtin.find:
+        paths: "{{ app_root }}/releases"
+        file_type: directory
+        recurse: false
+      register: deployed_releases
+
+    - name: Remove superseded releases
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: >-
+        {{ (deployed_releases.files
+            | rejectattr('path', 'equalto', release_path)
+            | sort(attribute='mtime', reverse=true))[release_keep_count - 1:] }}
+      when: deployed_releases.matched > release_keep_count
+
+    - name: Remove the remote release archive
+      ansible.builtin.file:
+        path: "{{ remote_archive }}"
+        state: absent
+
+    - name: Remove the local release archive
+      ansible.builtin.file:
+        path: "{{ local_archive }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+
+    - name: Report the private application URL
+      ansible.builtin.debug:
+        msg: "Deployment complete: {{ frontend_origin }}"
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart PostgreSQL
+      ansible.builtin.systemd_service:
+        name: postgresql
+        enabled: true
+        state: restarted
+
+    - name: Restart Redis
+      ansible.builtin.systemd_service:
+        name: redis-server
+        enabled: true
+        state: restarted
+
+    - name: Reload Caddy
+      ansible.builtin.systemd_service:
+        name: caddy
+        enabled: true
+        state: reloaded

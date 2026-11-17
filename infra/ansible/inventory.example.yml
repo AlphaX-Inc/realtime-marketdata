@@ -1,0 +1,6 @@
+all:
+  hosts:
+    marketdata:
+      ansible_host: "203.0.113.10"
+      ansible_user: "azureadmin"
+      key_vault_name: "replace-with-terraform-output"
