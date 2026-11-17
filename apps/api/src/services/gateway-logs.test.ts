@@ -28,6 +28,33 @@ describe("gateway log helpers", () => {
     expect(normalizeLogLimit("invalid")).toBe(100);
   });
 
+  it("explains why a Bigdata call missed the cache", async () => {
+    const { missReason } = await import("./gateway-logs.js");
+    const at = (iso: string) => new Date(`2026-11-17T${iso}Z`);
+    const miss = { cache: "MISS", key: "abc", durationMs: 500, createdAt: at("12:00:00.000") };
+    const hour = 60 * 60 * 1000;
+
+    expect(missReason({ ...miss, prevAt: null, lastStoredAt: null })).toBe("new");
+    expect(missReason({ ...miss, prevAt: at("11:00:00.000"), lastStoredAt: null })).toBe(
+      "prev_failed",
+    );
+    expect(
+      missReason({
+        ...miss,
+        prevAt: at("11:00:00.000"),
+        lastStoredAt: new Date(miss.createdAt.getTime() - 25 * hour),
+      }),
+    ).toBe("expired");
+    expect(
+      missReason({ ...miss, prevAt: at("11:59:59.800"), lastStoredAt: at("11:59:59.800") }),
+    ).toBe("concurrent");
+    expect(
+      missReason({ ...miss, prevAt: at("11:00:00.000"), lastStoredAt: at("11:00:00.000") }),
+    ).toBe("cache_lost");
+    expect(missReason({ ...miss, cache: "HIT", prevAt: null, lastStoredAt: null })).toBeNull();
+    expect(missReason({ ...miss, key: undefined, prevAt: null, lastStoredAt: null })).toBeNull();
+  });
+
   it("does not throw when the async log write fails", async () => {
     const { recordGatewayLog } = await import("./gateway-logs.js");
     dbMocks.create.mockRejectedValueOnce(new Error("database unavailable"));

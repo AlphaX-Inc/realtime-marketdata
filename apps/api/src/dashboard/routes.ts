@@ -3,6 +3,7 @@ import { requireCurrentUser } from "../auth/guard.js";
 import { hashPassword } from "../auth/password.js";
 import { db } from "../db.js";
 import {
+  listBigdataCalls,
   listGatewayLogs,
   normalizeLogLimit,
   summarizeBigdataCalls,
@@ -165,6 +166,6 @@ dashboardRoutes.get("/bigdata", async (c) => {
 
   return c.json({
     tools: await summarizeBigdataCalls(since),
-    calls: await listGatewayLogs(limit, { source: "bigdata" }),
+    calls: await listBigdataCalls(limit),
   });
 });

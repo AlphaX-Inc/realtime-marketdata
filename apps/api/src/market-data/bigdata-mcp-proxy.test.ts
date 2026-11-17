@@ -98,9 +98,11 @@ describe("bigdata MCP proxy", () => {
       error: false,
       args: '{"limit":5,"query":"NVDA"}',
     });
-    expect(hitLog).toMatchObject({ cache: "HIT", status: 200, error: false });
+    expect(hitLog).toMatchObject({ cache: "HIT", status: 200, error: false, errorReason: null });
     expect(missLog.caller).toMatch(/^[0-9a-f]{12}$/);
     expect(hitLog.caller).toBe(missLog.caller);
+    expect(missLog.key).toMatch(/^[0-9a-f]{16}$/);
+    expect(hitLog.key).toBe(missLog.key);
     expect(JSON.stringify(recordGatewayLog.mock.calls)).not.toContain("token-a");
   });
 
@@ -121,6 +123,7 @@ describe("bigdata MCP proxy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [first, second] = loggedCalls();
     expect(first.caller).not.toBe(second.caller);
+    expect(first.key).not.toBe(second.key);
   });
 
   it("extracts the result from an SSE reply and passes the stream body through unchanged", async () => {
@@ -149,13 +152,21 @@ describe("bigdata MCP proxy", () => {
     );
   });
 
-  it("does not cache tool errors or failed HTTP responses", async () => {
+  it("does not cache tool errors or failed HTTP responses, and logs why", async () => {
     const redis = createFakeRedis();
     fetchMock
       .mockImplementationOnce(
-        upstreamJson({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [] } }),
+        upstreamJson({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { isError: true, content: [{ type: "text", text: "Unknown ticker" }] },
+        }),
       )
-      .mockImplementationOnce(upstreamJson({ message: "credits" }, { status: 402 }));
+      .mockImplementationOnce(upstreamJson({ message: "credits" }, { status: 402 }))
+      .mockImplementationOnce(
+        upstreamJson({ jsonrpc: "2.0", id: 1, error: { code: -32602, message: "Bad params" } }),
+      )
+      .mockImplementationOnce(() => new Response("not json"));
 
     const toolError = await proxyBigdataMcp(
       mcpRequest(toolCall(1, "bigdata_search", {})),
@@ -166,12 +177,41 @@ describe("bigdata MCP proxy", () => {
       redis as never,
     );
 
+    await proxyBigdataMcp(mcpRequest(toolCall(1, "bigdata_search", {})), redis as never);
+    await proxyBigdataMcp(mcpRequest(toolCall(1, "bigdata_search", {})), redis as never);
+
     expect(toolError.status).toBe(200);
     expect(httpError.status).toBe(402);
     expect(redis.set).not.toHaveBeenCalled();
     expect(loggedCalls()).toMatchObject([
-      { cache: "MISS", status: 200, error: true },
-      { cache: "MISS", status: 402, error: true },
+      {
+        cache: "MISS",
+        status: 200,
+        error: true,
+        errorReason: "tool_error",
+        errorDetail: "Unknown ticker",
+      },
+      {
+        cache: "MISS",
+        status: 402,
+        error: true,
+        errorReason: "http",
+        errorDetail: '{"message":"credits"}',
+      },
+      {
+        cache: "MISS",
+        status: 200,
+        error: true,
+        errorReason: "rpc_error",
+        errorDetail: "Bad params",
+      },
+      {
+        cache: "MISS",
+        status: 200,
+        error: true,
+        errorReason: "unparseable",
+        errorDetail: "not json",
+      },
     ]);
   });
 
@@ -212,6 +252,34 @@ describe("bigdata MCP proxy", () => {
     await expect(
       proxyBigdataMcp(mcpRequest(toolCall(1, "bigdata_search", {})), createFakeRedis() as never),
     ).rejects.toThrow("upstream down");
-    expect(loggedCalls()).toMatchObject([{ cache: "MISS", status: 502, error: true }]);
+    expect(loggedCalls()).toMatchObject([
+      {
+        cache: "MISS",
+        status: 502,
+        error: true,
+        errorReason: "exception",
+        errorDetail: "upstream down",
+      },
+    ]);
+  });
+
+  it("logs a failed bypass call with its body and still passes the body through", async () => {
+    fetchMock.mockImplementation(upstreamJson({ message: "unauthorized" }, { status: 401 }));
+
+    const response = await proxyBigdataMcp(
+      mcpRequest(toolCall(1, "bigdata_get_watchlist", {})),
+      createFakeRedis() as never,
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ message: "unauthorized" });
+    expect(loggedCalls()).toMatchObject([
+      {
+        cache: "BYPASS",
+        status: 401,
+        errorReason: "http",
+        errorDetail: '{"message":"unauthorized"}',
+      },
+    ]);
   });
 });

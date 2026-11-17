@@ -114,6 +114,12 @@ a fingerprint of the Bearer token, and the first 300 characters of the arguments
 **Bigdata** shows 24-hour totals, a per-tool breakdown, and recent calls. Logs are kept for 7 days
 and are left out of the main Logs page.
 
+The Reason column on recent calls says why a call failed (HTTP status with the upstream body, tool
+error text, JSON-RPC error, unreadable reply, aborted, or proxy exception) or, for a successful
+`MISS`, why nothing was cached: new arguments or caller, an earlier identical call failed, the entry
+expired after 24 hours, a concurrent duplicate, or the cache was lost (Redis flushed or restarted).
+`BYPASS` calls stream straight through, so only their HTTP failures are detected.
+
 ```sh
 curl -i -X POST -H "Authorization: Bearer <bigdata-key>" \
   -H "Accept: application/json, text/event-stream" -H "content-type: application/json" \

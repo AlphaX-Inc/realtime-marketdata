@@ -196,10 +196,17 @@ export type BigdataToolStats = {
   avgDurationMs: number;
 };
 
+export type BigdataCall = {
+  id: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+  missReason: "new" | "prev_failed" | "expired" | "concurrent" | "cache_lost" | null;
+};
+
 export async function getBigdataActivity(limit = 100) {
   return request<{
     tools: BigdataToolStats[];
-    calls: GatewayLog[];
+    calls: BigdataCall[];
   }>(`/bigdata?limit=${limit}`);
 }
 

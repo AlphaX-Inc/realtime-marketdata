@@ -8,6 +8,7 @@ import { bigdataCacheKey } from "./redis-keys.js";
 type CacheStore = Pick<Redis, "get" | "set">;
 type JsonObject = Record<string, unknown>;
 type JsonRpcId = string | number;
+type Failure = { reason: string; detail: string };
 
 const dayTtlSeconds = 60 * 60 * 24;
 const droppedRequestHeaders = ["host", "content-length", "connection", "accept-encoding"];
@@ -91,7 +92,7 @@ function sha256(text: string) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function findResult(text: string, contentType: string | null, id: JsonRpcId) {
+function findResponse(text: string, contentType: string | null, id: JsonRpcId) {
   const messages = contentType?.includes("text/event-stream")
     ? text.split(/\r?\n\r?\n/).map((event) =>
         parseJson(
@@ -103,9 +104,40 @@ function findResult(text: string, contentType: string | null, id: JsonRpcId) {
         ),
       )
     : [parseJson(text)];
-  const response = messages.find((message) => isObject(message) && message.id === id);
+  return messages.filter(isObject).find((message) => message.id === id);
+}
 
-  return isObject(response) && isObject(response.result) ? response.result : undefined;
+function toolErrorText(result: JsonObject) {
+  const content = Array.isArray(result.content) ? result.content : [];
+  const item = content.find((entry) => isObject(entry) && typeof entry.text === "string");
+
+  return isObject(item) ? String(item.text) : canonicalJson(result.content ?? null);
+}
+
+// Why a buffered upstream reply can't be cached; undefined when it can.
+function describeFailure(
+  ok: boolean,
+  text: string,
+  response: JsonObject | undefined,
+): Failure | undefined {
+  if (!ok) {
+    return { reason: "http", detail: text };
+  }
+
+  if (isObject(response?.error)) {
+    return {
+      reason: "rpc_error",
+      detail: String(response.error.message ?? canonicalJson(response.error)),
+    };
+  }
+
+  if (!isObject(response?.result)) {
+    return { reason: "unparseable", detail: text };
+  }
+
+  return response.result.isError === true
+    ? { reason: "tool_error", detail: toolErrorText(response.result) }
+    : undefined;
 }
 
 function responseHeaders(headers: Headers, cache?: "HIT" | "MISS") {
@@ -154,8 +186,10 @@ export async function proxyBigdataMcp(
   const startedAt = Date.now();
   const token = request.headers.get("authorization") ?? "";
   const args = canonicalJson(call.args);
+  // Keyed per Authorization header: a token only ever reads results its own upstream calls produced.
+  const hash = sha256(`${token}\n${args}`);
   const cache = cachedMcpTools.has(call.name) ? "MISS" : "BYPASS";
-  const logCall = (outcome: "HIT" | "MISS" | "BYPASS", status: number, error: boolean) =>
+  const logCall = (outcome: "HIT" | "MISS" | "BYPASS", status: number, failure?: Failure) =>
     recordGatewayLog({
       source: "bigdata",
       eventType: "tool_call",
@@ -164,18 +198,26 @@ export async function proxyBigdataMcp(
         tool: call.name,
         cache: outcome,
         status,
-        error,
+        error: Boolean(failure),
+        errorReason: failure?.reason ?? null,
+        errorDetail: failure?.detail.slice(0, 200) ?? null,
         durationMs: Date.now() - startedAt,
         // Fingerprint only; the raw Bearer token is never stored.
         caller: sha256(token).slice(0, 12),
         args: args.slice(0, 300),
+        // Same tool + key = same cache entry; the dashboard derives miss reasons from it.
+        key: hash.slice(0, 16),
       },
     });
 
   try {
     if (cache === "BYPASS") {
       const upstream = await forward(request, body);
-      logCall(cache, upstream.status, !upstream.ok);
+      // Error bodies are small; clone so a successful stream is never buffered.
+      const failure = upstream.ok
+        ? undefined
+        : { reason: "http", detail: await upstream.clone().text() };
+      logCall(cache, upstream.status, failure);
 
       return new Response(upstream.body, {
         status: upstream.status,
@@ -183,8 +225,7 @@ export async function proxyBigdataMcp(
       });
     }
 
-    // Keyed per Authorization header: a token only ever reads results its own upstream calls produced.
-    const key = bigdataCacheKey(call.name, sha256(`${token}\n${args}`));
+    const key = bigdataCacheKey(call.name, hash);
     const hit = await store.get(key);
 
     if (hit !== null) {
@@ -192,7 +233,7 @@ export async function proxyBigdataMcp(
         { jsonrpc: "2.0", id: call.id, result: JSON.parse(hit) },
         { headers: { "x-bigdata-cache": "HIT" } },
       );
-      logCall("HIT", 200, false);
+      logCall("HIT", 200);
       return response;
     }
 
@@ -200,23 +241,26 @@ export async function proxyBigdataMcp(
     // ponytail: no stampede lock; concurrent misses each call upstream, add SET NX lock if credits burn
     const upstream = await forward(request, body);
     const text = await upstream.text();
-    const result = upstream.ok
-      ? findResult(text, upstream.headers.get("content-type"), call.id)
+    const response = upstream.ok
+      ? findResponse(text, upstream.headers.get("content-type"), call.id)
       : undefined;
-    const failed = !result || result.isError === true;
+    const failure = describeFailure(upstream.ok, text, response);
 
-    if (!failed) {
-      await store.set(key, JSON.stringify(result), "EX", dayTtlSeconds);
+    if (!failure) {
+      await store.set(key, JSON.stringify(response?.result), "EX", dayTtlSeconds);
     }
 
-    logCall(cache, upstream.status, failed);
+    logCall(cache, upstream.status, failure);
 
     return new Response(text, {
       status: upstream.status,
       headers: responseHeaders(upstream.headers, cache),
     });
   } catch (error) {
-    logCall(cache, 502, true);
+    logCall(cache, 502, {
+      reason: error instanceof Error && error.name === "AbortError" ? "aborted" : "exception",
+      detail: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
 }

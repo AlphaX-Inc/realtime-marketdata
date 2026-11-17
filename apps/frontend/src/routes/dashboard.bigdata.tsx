@@ -25,13 +25,49 @@ import {
 } from "@realtime-pricing/ui/components/table";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { getBigdataActivity } from "@/lib/api";
+import { type BigdataCall, getBigdataActivity } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/bigdata")({
   component: BigdataPage,
 });
 
 const numberFormat = new Intl.NumberFormat();
+
+const errorLabels: Record<string, string> = {
+  tool_error: "Tool returned error",
+  rpc_error: "JSON-RPC error",
+  unparseable: "Unreadable reply",
+  aborted: "Client aborted",
+  exception: "Proxy exception",
+};
+
+const missLabels: Record<string, string> = {
+  new: "New args or caller",
+  prev_failed: "Earlier call failed",
+  expired: "Expired (>24h)",
+  concurrent: "Concurrent duplicate",
+  cache_lost: "Cache lost (Redis)",
+};
+
+function httpLabel(status: number) {
+  if (status === 401 || status === 403) return "Auth rejected";
+  if (status === 429) return "Rate limited";
+  if (status >= 500) return "Bigdata server error";
+  return `HTTP ${status}`;
+}
+
+// Errors explain themselves first; a successful MISS falls back to why the cache had nothing.
+function callReason({ metadata: meta, missReason }: BigdataCall) {
+  if (meta.error) {
+    const reason = String(meta.errorReason ?? "");
+    const label =
+      reason === "http" ? httpLabel(Number(meta.status)) : (errorLabels[reason] ?? "Error");
+
+    return { label, detail: meta.errorDetail ? String(meta.errorDetail) : "" };
+  }
+
+  return { label: missReason ? missLabels[missReason] : "-", detail: "" };
+}
 
 function BigdataPage() {
   const activityQuery = useQuery({
@@ -163,8 +199,9 @@ function BigdataPage() {
             <CardHeader>
               <CardTitle>Recent calls</CardTitle>
               <CardDescription>
-                Newest first, kept for 7 days. Caller is a fingerprint of the Bearer token. This
-                view refreshes every 10 seconds.
+                Newest first, kept for 7 days. Reason says why a call failed, or why a MISS found
+                nothing cached. Caller is a fingerprint of the Bearer token. This view refreshes
+                every 10 seconds.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -174,6 +211,7 @@ function BigdataPage() {
                     <TableHead>Time</TableHead>
                     <TableHead>Tool</TableHead>
                     <TableHead>Cache</TableHead>
+                    <TableHead>Reason</TableHead>
                     <TableHead className="text-right">Status</TableHead>
                     <TableHead className="text-right">ms</TableHead>
                     <TableHead>Caller</TableHead>
@@ -184,6 +222,7 @@ function BigdataPage() {
                   {calls.map((call) => {
                     const meta = call.metadata;
                     const args = String(meta.args ?? "");
+                    const reason = callReason(call);
 
                     return (
                       <TableRow key={call.id}>
@@ -203,6 +242,14 @@ function BigdataPage() {
                           >
                             {String(meta.cache ?? "-")}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-[260px]" title={reason.detail || undefined}>
+                          <p className="whitespace-nowrap">{reason.label}</p>
+                          {reason.detail ? (
+                            <p className="truncate font-mono text-xs text-muted-foreground">
+                              {reason.detail}
+                            </p>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-right">{String(meta.status ?? "-")}</TableCell>
                         <TableCell className="text-right">
