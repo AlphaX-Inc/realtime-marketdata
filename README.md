@@ -93,6 +93,27 @@ server (`BIGDATA_MCP_URL`, default `https://mcp.bigdata.com/`). Point an existin
 in place of `https://mcp.bigdata.com/` and keep sending the same `Authorization: Bearer <bigdata-key>`
 header. The token is forwarded upstream as-is; no service API key is needed.
 
+MCP URL for your client:
+
+| Where the API runs | MCP URL |
+| --- | --- |
+| Local dev | `http://localhost:8000/bigdata/mcp` |
+| Docker compose host | `http://<host>:${API_PORT:-8000}/bigdata/mcp` |
+| Deployed | `https://<your-api-domain>/bigdata/mcp` |
+
+Use your `API_PORT` value if it isn't `8000`. The only header the client needs is
+`Authorization: Bearer <bigdata-key>`. Browser-based clients also need `Authorization`,
+`mcp-session-id`, and `mcp-protocol-version` added to `allowHeaders` in the CORS setup in
+`apps/api/src/index.ts`. Server-side clients don't.
+
+To check it works, make the same tool call twice. The `x-bigdata-cache` response header should
+read `MISS` the first time and `HIT` the second.
+
+Every `tools/call` through the proxy is logged (tool, `HIT`/`MISS`/`BYPASS`, status, duration,
+a fingerprint of the Bearer token, and the first 300 characters of the arguments). Dashboard →
+**Bigdata** shows 24-hour totals, a per-tool breakdown, and recent calls. Logs are kept for 7 days
+and are left out of the main Logs page.
+
 ```sh
 curl -i -X POST -H "Authorization: Bearer <bigdata-key>" \
   -H "Accept: application/json, text/event-stream" -H "content-type: application/json" \

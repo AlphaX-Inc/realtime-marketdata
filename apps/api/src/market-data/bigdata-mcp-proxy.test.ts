@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { proxyBigdataMcp } from "./bigdata-mcp-proxy.js";
 
 const fetchMock = vi.fn();
+const { recordGatewayLog } = vi.hoisted(() => ({ recordGatewayLog: vi.fn() }));
+
+vi.mock("../services/gateway-logs.js", () => ({ recordGatewayLog }));
+
+function loggedCalls() {
+  return recordGatewayLog.mock.calls.map(([input]) => input.metadata);
+}
 
 function createFakeRedis() {
   const values = new Map<string, string>();
@@ -42,6 +49,7 @@ const nvdaResult = { content: [{ type: "text", text: "NVDA" }] };
 describe("bigdata MCP proxy", () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    recordGatewayLog.mockReset();
     vi.stubGlobal("fetch", fetchMock);
   });
 
@@ -78,13 +86,32 @@ describe("bigdata MCP proxy", () => {
     expect(hit.headers.get("x-bigdata-cache")).toBe("HIT");
     await expect(hit.json()).resolves.toEqual({ jsonrpc: "2.0", id: 7, result: nvdaResult });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    expect(recordGatewayLog).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "bigdata", eventType: "tool_call" }),
+    );
+    const [missLog, hitLog] = loggedCalls();
+    expect(missLog).toMatchObject({
+      tool: "find_securities",
+      cache: "MISS",
+      status: 200,
+      error: false,
+      args: '{"limit":5,"query":"NVDA"}',
+    });
+    expect(hitLog).toMatchObject({ cache: "HIT", status: 200, error: false });
+    expect(missLog.caller).toMatch(/^[0-9a-f]{12}$/);
+    expect(hitLog.caller).toBe(missLog.caller);
+    expect(JSON.stringify(recordGatewayLog.mock.calls)).not.toContain("token-a");
   });
 
   it("does not share cached results across Bearer tokens", async () => {
     const redis = createFakeRedis();
     fetchMock.mockImplementation(upstreamJson({ jsonrpc: "2.0", id: 1, result: nvdaResult }));
 
-    await proxyBigdataMcp(mcpRequest(toolCall(1, "find_securities", { query: "NVDA" })), redis as never);
+    await proxyBigdataMcp(
+      mcpRequest(toolCall(1, "find_securities", { query: "NVDA" })),
+      redis as never,
+    );
     const other = await proxyBigdataMcp(
       mcpRequest(toolCall(1, "find_securities", { query: "NVDA" }), "Bearer someone-else"),
       redis as never,
@@ -92,6 +119,8 @@ describe("bigdata MCP proxy", () => {
 
     expect(other.headers.get("x-bigdata-cache")).toBe("MISS");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [first, second] = loggedCalls();
+    expect(first.caller).not.toBe(second.caller);
   });
 
   it("extracts the result from an SSE reply and passes the stream body through unchanged", async () => {
@@ -140,6 +169,10 @@ describe("bigdata MCP proxy", () => {
     expect(toolError.status).toBe(200);
     expect(httpError.status).toBe(402);
     expect(redis.set).not.toHaveBeenCalled();
+    expect(loggedCalls()).toMatchObject([
+      { cache: "MISS", status: 200, error: true },
+      { cache: "MISS", status: 402, error: true },
+    ]);
   });
 
   it("passes account-state tools and session traffic through without touching the cache", async () => {
@@ -167,5 +200,18 @@ describe("bigdata MCP proxy", () => {
     expect(new Headers(fetchMock.mock.calls[1][1].headers).get("mcp-session-id")).toBe("session-1");
     expect(redis.get).not.toHaveBeenCalled();
     expect(redis.set).not.toHaveBeenCalled();
+    // initialize is session traffic, not a tool call, so only the watchlist call is logged.
+    expect(loggedCalls()).toMatchObject([
+      { tool: "bigdata_get_watchlist", cache: "BYPASS", status: 200, error: false },
+    ]);
+  });
+
+  it("logs an upstream failure as a 502 error and rethrows", async () => {
+    fetchMock.mockRejectedValue(new Error("upstream down"));
+
+    await expect(
+      proxyBigdataMcp(mcpRequest(toolCall(1, "bigdata_search", {})), createFakeRedis() as never),
+    ).rejects.toThrow("upstream down");
+    expect(loggedCalls()).toMatchObject([{ cache: "MISS", status: 502, error: true }]);
   });
 });

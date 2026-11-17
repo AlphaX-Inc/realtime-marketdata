@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Redis } from "ioredis";
 import { bigdataMcpUrl, redisUrl } from "../config.js";
+import { recordGatewayLog } from "../services/gateway-logs.js";
 import { createRedisClient } from "./redis-bus.js";
 import { bigdataCacheKey } from "./redis-keys.js";
 
@@ -11,7 +12,12 @@ type JsonRpcId = string | number;
 const dayTtlSeconds = 60 * 60 * 24;
 const droppedRequestHeaders = ["host", "content-length", "connection", "accept-encoding"];
 // fetch already decoded the body, so the upstream framing headers no longer apply.
-const droppedResponseHeaders = ["content-encoding", "content-length", "transfer-encoding", "connection"];
+const droppedResponseHeaders = [
+  "content-encoding",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+];
 
 // Stateless MCP data tools. Every other MCP tool reads or mutates account state
 // (watchlists, monitors, private docs, sandbox) and is passed through uncached.
@@ -66,7 +72,7 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-function cacheableToolCall(message: unknown) {
+function parseToolCall(message: unknown) {
   if (!isObject(message) || message.method !== "tools/call") {
     return undefined;
   }
@@ -78,9 +84,11 @@ function cacheableToolCall(message: unknown) {
     return undefined;
   }
 
-  return cachedMcpTools.has(params.name)
-    ? { id, name: params.name, args: params.arguments ?? {} }
-    : undefined;
+  return { id, name: params.name, args: params.arguments ?? {} };
+}
+
+function sha256(text: string) {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function findResult(text: string, contentType: string | null, id: JsonRpcId) {
@@ -126,12 +134,13 @@ function forward(request: Request, body: string | undefined) {
 
 // Transparent MCP Streamable HTTP proxy to Bigdata. Only allowlisted `tools/call`
 // requests touch the cache; sessions, notifications and SSE streams pass straight through.
+// Every `tools/call` is logged to GatewayLog (source "bigdata") for the dashboard.
 export async function proxyBigdataMcp(
   request: Request,
   store: CacheStore = getRedis(),
 ): Promise<Response> {
   const body = request.method === "POST" ? await request.text() : undefined;
-  const call = body === undefined ? undefined : cacheableToolCall(parseJson(body));
+  const call = body === undefined ? undefined : parseToolCall(parseJson(body));
 
   if (!call) {
     const upstream = await forward(request, body);
@@ -142,35 +151,72 @@ export async function proxyBigdataMcp(
     });
   }
 
-  // Keyed per Authorization header: a token only ever reads results its own upstream calls produced.
+  const startedAt = Date.now();
   const token = request.headers.get("authorization") ?? "";
-  const key = bigdataCacheKey(
-    call.name,
-    createHash("sha256").update(`${token}\n${canonicalJson(call.args)}`).digest("hex"),
-  );
-  const hit = await store.get(key);
+  const args = canonicalJson(call.args);
+  const cache = cachedMcpTools.has(call.name) ? "MISS" : "BYPASS";
+  const logCall = (outcome: "HIT" | "MISS" | "BYPASS", status: number, error: boolean) =>
+    recordGatewayLog({
+      source: "bigdata",
+      eventType: "tool_call",
+      message: `${call.name} ${outcome} ${status}`,
+      metadata: {
+        tool: call.name,
+        cache: outcome,
+        status,
+        error,
+        durationMs: Date.now() - startedAt,
+        // Fingerprint only; the raw Bearer token is never stored.
+        caller: sha256(token).slice(0, 12),
+        args: args.slice(0, 300),
+      },
+    });
 
-  if (hit !== null) {
-    return Response.json(
-      { jsonrpc: "2.0", id: call.id, result: JSON.parse(hit) },
-      { headers: { "x-bigdata-cache": "HIT" } },
-    );
+  try {
+    if (cache === "BYPASS") {
+      const upstream = await forward(request, body);
+      logCall(cache, upstream.status, !upstream.ok);
+
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: responseHeaders(upstream.headers),
+      });
+    }
+
+    // Keyed per Authorization header: a token only ever reads results its own upstream calls produced.
+    const key = bigdataCacheKey(call.name, sha256(`${token}\n${args}`));
+    const hit = await store.get(key);
+
+    if (hit !== null) {
+      const response = Response.json(
+        { jsonrpc: "2.0", id: call.id, result: JSON.parse(hit) },
+        { headers: { "x-bigdata-cache": "HIT" } },
+      );
+      logCall("HIT", 200, false);
+      return response;
+    }
+
+    // ponytail: miss buffers the whole upstream reply (progress events arrive at the end); stream-tee if a client needs live progress
+    // ponytail: no stampede lock; concurrent misses each call upstream, add SET NX lock if credits burn
+    const upstream = await forward(request, body);
+    const text = await upstream.text();
+    const result = upstream.ok
+      ? findResult(text, upstream.headers.get("content-type"), call.id)
+      : undefined;
+    const failed = !result || result.isError === true;
+
+    if (!failed) {
+      await store.set(key, JSON.stringify(result), "EX", dayTtlSeconds);
+    }
+
+    logCall(cache, upstream.status, failed);
+
+    return new Response(text, {
+      status: upstream.status,
+      headers: responseHeaders(upstream.headers, cache),
+    });
+  } catch (error) {
+    logCall(cache, 502, true);
+    throw error;
   }
-
-  // ponytail: miss buffers the whole upstream reply (progress events arrive at the end); stream-tee if a client needs live progress
-  // ponytail: no stampede lock; concurrent misses each call upstream, add SET NX lock if credits burn
-  const upstream = await forward(request, body);
-  const text = await upstream.text();
-  const result = upstream.ok
-    ? findResult(text, upstream.headers.get("content-type"), call.id)
-    : undefined;
-
-  if (result && result.isError !== true) {
-    await store.set(key, JSON.stringify(result), "EX", dayTtlSeconds);
-  }
-
-  return new Response(text, {
-    status: upstream.status,
-    headers: responseHeaders(upstream.headers, "MISS"),
-  });
 }

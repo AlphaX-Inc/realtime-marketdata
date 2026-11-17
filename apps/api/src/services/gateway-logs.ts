@@ -1,6 +1,6 @@
 import { db, type Prisma } from "../db.js";
 
-export type GatewayLogSource = "downstream" | "upstream";
+export type GatewayLogSource = "downstream" | "upstream" | "bigdata";
 
 export type GatewayLogInput = {
   source: GatewayLogSource;
@@ -66,8 +66,9 @@ export function normalizeLogLimit(rawLimit: string | undefined) {
   return Math.min(Math.max(Math.trunc(limit), 1), 500);
 }
 
-export async function listGatewayLogs(limit: number) {
+export async function listGatewayLogs(limit: number, where?: Prisma.GatewayLogWhereInput) {
   const logs = await db.gatewayLog.findMany({
+    where,
     orderBy: {
       createdAt: "desc",
     },
@@ -85,4 +86,31 @@ export async function listGatewayLogs(limit: number) {
     metadata: log.metadata,
     createdAt: log.createdAt.toISOString(),
   }));
+}
+
+export type BigdataToolStats = {
+  tool: string;
+  calls: number;
+  hits: number;
+  misses: number;
+  bypassed: number;
+  errors: number;
+  avgDurationMs: number;
+};
+
+// Per-tool rollup of proxied Bigdata MCP calls; ::int casts keep BigInt/Decimal out of the JSON.
+export function summarizeBigdataCalls(since: Date) {
+  return db.$queryRaw<BigdataToolStats[]>`
+    SELECT metadata->>'tool' AS tool,
+           count(*)::int AS calls,
+           count(*) FILTER (WHERE metadata->>'cache' = 'HIT')::int AS hits,
+           count(*) FILTER (WHERE metadata->>'cache' = 'MISS')::int AS misses,
+           count(*) FILTER (WHERE metadata->>'cache' = 'BYPASS')::int AS bypassed,
+           count(*) FILTER (WHERE (metadata->>'error')::boolean)::int AS errors,
+           round(avg((metadata->>'durationMs')::numeric))::int AS "avgDurationMs"
+    FROM "GatewayLog"
+    WHERE source = 'bigdata' AND "createdAt" > ${since}
+    GROUP BY 1
+    ORDER BY calls DESC
+  `;
 }
