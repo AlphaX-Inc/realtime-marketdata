@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
+# Deploy committed HEAD to prod via infra/ansible/site.yml (see infra/README.md).
+# Extra args go to ansible-playbook, e.g. ./update.sh -v
 set -euo pipefail
+cd "$(dirname "$0")/infra/ansible"
 
-cd "$(dirname "$0")"
+[ -f inventory.yml ] || { echo "Missing infra/ansible/inventory.yml (copy inventory.example.yml)." >&2; exit 1; }
+[ -z "$(git status --porcelain)" ] || echo "Warning: uncommitted changes are NOT deployed; only committed HEAD ships." >&2
 
-git pull
-
-if docker compose version >/dev/null 2>&1; then
-  docker compose -f docker-compose.yml up -d --build
-elif command -v docker-compose >/dev/null 2>&1; then
-  docker-compose -f docker-compose.yml up -d --build
-else
-  echo "Docker Compose is not installed or not available in PATH." >&2
-  exit 1
-fi
+echo "Deploying $(git rev-parse --short=12 HEAD) ($(git branch --show-current)) to prod"
+ansible-playbook site.yml --diff "$@"
