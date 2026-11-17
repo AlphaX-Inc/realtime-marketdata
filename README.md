@@ -86,6 +86,55 @@ curl -X POST -H "content-type: application/json" -H "x-api-key: <api-key>" \
 
 US and JP options responses are cached by market, symbol, date, and contract ID.
 
+## Bigdata.com MCP proxy
+
+`/bigdata/mcp` is a caching proxy for the [Bigdata MCP](https://docs.bigdata.com/mcp-reference/introduction)
+server (`BIGDATA_MCP_URL`, default `https://mcp.bigdata.com/`). Point an existing MCP client at it
+in place of `https://mcp.bigdata.com/` and keep sending the same `Authorization: Bearer <bigdata-key>`
+header. The token is forwarded upstream as-is; no service API key is needed.
+
+MCP URL for your client:
+
+| Where the API runs | MCP URL |
+| --- | --- |
+| Local dev | `http://localhost:8000/bigdata/mcp` |
+| Docker compose host | `http://<host>:${API_PORT:-8000}/bigdata/mcp` |
+| Deployed | `https://<your-api-domain>/bigdata/mcp` |
+
+Use your `API_PORT` value if it isn't `8000`. The only header the client needs is
+`Authorization: Bearer <bigdata-key>`. Browser-based clients also need `Authorization`,
+`mcp-session-id`, and `mcp-protocol-version` added to `allowHeaders` in the CORS setup in
+`apps/api/src/index.ts`. Server-side clients don't.
+
+To check it works, make the same tool call twice. The `x-bigdata-cache` response header should
+read `MISS` the first time and `HIT` the second.
+
+Every `tools/call` through the proxy is logged (tool, `HIT`/`MISS`/`BYPASS`, status, duration,
+a fingerprint of the Bearer token, and the first 300 characters of the arguments). Dashboard →
+**Bigdata** shows 24-hour totals, a per-tool breakdown, and recent calls. Logs are kept for 7 days
+and are left out of the main Logs page.
+
+The Reason column on recent calls says why a call failed (HTTP status with the upstream body, tool
+error text, JSON-RPC error, unreadable reply, aborted, or proxy exception) or, for a successful
+`MISS`, why nothing was cached: new arguments or caller, an earlier identical call failed, the entry
+expired after 24 hours, a concurrent duplicate, or the cache was lost (Redis flushed or restarted).
+`BYPASS` calls stream straight through, so only their HTTP failures are detected.
+
+```sh
+curl -i -X POST -H "Authorization: Bearer <bigdata-key>" \
+  -H "Accept: application/json, text/event-stream" -H "content-type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"find_securities","arguments":{"query":"NVDA"}}}' \
+  "http://localhost:8000/bigdata/mcp"
+```
+
+`tools/call` results for the stateless data tools (`find_securities`, `bigdata_search`, the
+tearsheets, and so on, listed in `cachedMcpTools`) are cached in Redis under `bigdata:cache:*` for
+24 hours. The cache key covers the tool name, the arguments (key order ignored), and the Bearer
+token, so different tokens never share cached results. Tool errors and failed responses are not
+cached. Every other request passes straight through: `initialize`, `tools/list`, notifications,
+SSE streams, and account-state tools such as watchlists or monitors. The `x-bigdata-cache: HIT|MISS`
+response header marks cacheable calls.
+
 Run the worker separately so it owns the single Twelve Data upstream connection:
 
 ```sh

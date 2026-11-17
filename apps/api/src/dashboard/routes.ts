@@ -2,7 +2,12 @@ import { Hono } from "hono";
 import { requireCurrentUser } from "../auth/guard.js";
 import { hashPassword } from "../auth/password.js";
 import { db } from "../db.js";
-import { listGatewayLogs, normalizeLogLimit } from "../services/gateway-logs.js";
+import {
+  listBigdataCalls,
+  listGatewayLogs,
+  normalizeLogLimit,
+  summarizeBigdataCalls,
+} from "../services/gateway-logs.js";
 import { createServiceApiKey, listServiceApiKeys } from "../services/service-api-keys.js";
 
 type CreateUserPayload = {
@@ -151,6 +156,16 @@ dashboardRoutes.get("/logs", async (c) => {
   const limit = normalizeLogLimit(c.req.query("limit"));
 
   return c.json({
-    logs: await listGatewayLogs(limit),
+    logs: await listGatewayLogs(limit, { source: { not: "bigdata" } }),
+  });
+});
+
+dashboardRoutes.get("/bigdata", async (c) => {
+  const limit = normalizeLogLimit(c.req.query("limit"));
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  return c.json({
+    tools: await summarizeBigdataCalls(since),
+    calls: await listBigdataCalls(limit),
   });
 });

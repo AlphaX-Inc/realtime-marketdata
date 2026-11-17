@@ -1,6 +1,7 @@
 import {
   BookOpenText,
   Broadcast,
+  ChartBar,
   Clock,
   Flask,
   GitBranch,
@@ -57,6 +58,11 @@ const navItems = [
     to: "/dashboard/logs",
     label: "Logs",
     icon: Broadcast,
+  },
+  {
+    to: "/dashboard/bigdata",
+    label: "Bigdata",
+    icon: ChartBar,
   },
 ] as const;
 

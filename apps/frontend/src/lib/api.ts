@@ -186,11 +186,33 @@ export async function listGatewayLogs(limit = 100) {
   }>(`/logs?limit=${limit}`);
 }
 
-export async function listStockSplits(payload: {
-  symbols?: string;
-  from?: string;
-  to?: string;
-} = {}) {
+export type BigdataToolStats = {
+  tool: string;
+  calls: number;
+  hits: number;
+  misses: number;
+  bypassed: number;
+  errors: number;
+  avgDurationMs: number;
+};
+
+export type BigdataCall = {
+  id: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+  missReason: "new" | "prev_failed" | "expired" | "concurrent" | "cache_lost" | null;
+};
+
+export async function getBigdataActivity(limit = 100) {
+  return request<{
+    tools: BigdataToolStats[];
+    calls: BigdataCall[];
+  }>(`/bigdata?limit=${limit}`);
+}
+
+export async function listStockSplits(
+  payload: { symbols?: string; from?: string; to?: string } = {},
+) {
   const params = new URLSearchParams();
 
   if (payload.symbols?.trim()) {

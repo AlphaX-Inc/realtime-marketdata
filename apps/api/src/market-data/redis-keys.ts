@@ -13,3 +13,9 @@ export function desiredSymbolLeaseKey(symbol: string) {
 export function snapshotKey(symbol: string) {
   return `${snapshotPrefix}${symbol}`;
 }
+
+export const bigdataCachePrefix = "bigdata:cache:";
+
+export function bigdataCacheKey(tool: string, argsHash: string) {
+  return `${bigdataCachePrefix}${tool}:${argsHash}`;
+}

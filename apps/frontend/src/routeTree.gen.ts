@@ -20,6 +20,7 @@ import { Route as DashboardTestsRouteImport } from './routes/dashboard.tests'
 import { Route as DashboardStockSplitsRouteImport } from './routes/dashboard.stock-splits'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
 import { Route as DashboardDocsRouteImport } from './routes/dashboard.docs'
+import { Route as DashboardBigdataRouteImport } from './routes/dashboard.bigdata'
 import { Route as DashboardApiKeysRouteImport } from './routes/dashboard.api-keys'
 
 const TestsRoute = TestsRouteImport.update({
@@ -77,6 +78,11 @@ const DashboardDocsRoute = DashboardDocsRouteImport.update({
   path: '/docs',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardBigdataRoute = DashboardBigdataRouteImport.update({
+  id: '/bigdata',
+  path: '/bigdata',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardApiKeysRoute = DashboardApiKeysRouteImport.update({
   id: '/api-keys',
   path: '/api-keys',
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/tests': typeof TestsRoute
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
+  '/dashboard/bigdata': typeof DashboardBigdataRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/stock-splits': typeof DashboardStockSplitsRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/tests': typeof TestsRoute
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
+  '/dashboard/bigdata': typeof DashboardBigdataRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/stock-splits': typeof DashboardStockSplitsRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/tests': typeof TestsRoute
   '/dashboard/api-keys': typeof DashboardApiKeysRoute
+  '/dashboard/bigdata': typeof DashboardBigdataRoute
   '/dashboard/docs': typeof DashboardDocsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/stock-splits': typeof DashboardStockSplitsRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/tests'
     | '/dashboard/api-keys'
+    | '/dashboard/bigdata'
     | '/dashboard/docs'
     | '/dashboard/logs'
     | '/dashboard/stock-splits'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/tests'
     | '/dashboard/api-keys'
+    | '/dashboard/bigdata'
     | '/dashboard/docs'
     | '/dashboard/logs'
     | '/dashboard/stock-splits'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/tests'
     | '/dashboard/api-keys'
+    | '/dashboard/bigdata'
     | '/dashboard/docs'
     | '/dashboard/logs'
     | '/dashboard/stock-splits'
@@ -256,6 +268,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDocsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/bigdata': {
+      id: '/dashboard/bigdata'
+      path: '/bigdata'
+      fullPath: '/dashboard/bigdata'
+      preLoaderRoute: typeof DashboardBigdataRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/api-keys': {
       id: '/dashboard/api-keys'
       path: '/api-keys'
@@ -268,6 +287,7 @@ declare module '@tanstack/react-router' {
 
 interface DashboardRouteChildren {
   DashboardApiKeysRoute: typeof DashboardApiKeysRoute
+  DashboardBigdataRoute: typeof DashboardBigdataRoute
   DashboardDocsRoute: typeof DashboardDocsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
   DashboardStockSplitsRoute: typeof DashboardStockSplitsRoute
@@ -278,6 +298,7 @@ interface DashboardRouteChildren {
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardApiKeysRoute: DashboardApiKeysRoute,
+  DashboardBigdataRoute: DashboardBigdataRoute,
   DashboardDocsRoute: DashboardDocsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
   DashboardStockSplitsRoute: DashboardStockSplitsRoute,
