@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly key_vault_name={{ key_vault_name | quote }}
+readonly destination={{ runtime_env_path | quote }}
+readonly metadata_url='http://169.254.169.254/metadata/identity/oauth2/token?api-version=2019-08-01&resource=https%3A%2F%2Fvault.azure.net'
+readonly secret_url="https://${key_vault_name}.vault.azure.net/secrets/runtime-env?api-version=7.4"
+
+temporary_file="$(mktemp /etc/realtime-marketdata/runtime.env.XXXXXX)"
+trap 'rm -f "${temporary_file}"' EXIT
+
+access_token="$(curl --fail --silent --show-error --header 'Metadata: true' "${metadata_url}" | jq --exit-status --raw-output '.access_token')"
+printf 'header = "Authorization: Bearer %s"\nurl = "%s"\n' "${access_token}" "${secret_url}" \
+  | curl --fail --silent --show-error --config - \
+  | jq --exit-status --raw-output '.value' > "${temporary_file}"
+
+if grep --invert-match --extended-regexp --quiet '^[[:space:]]*($|#|[A-Za-z_][A-Za-z0-9_]*=)' "${temporary_file}"; then
+  echo 'Key Vault runtime-env contains an invalid environment line' >&2
+  exit 1
+fi
+
+for required_key in DATABASE_URL REDIS_URL API_KEY_ENCRYPTION_SECRET TWELVEDATA_API_KEY; do
+  if ! grep --extended-regexp --quiet "^${required_key}=.+" "${temporary_file}"; then
+    echo "Key Vault runtime-env is missing a non-empty ${required_key}" >&2
+    exit 1
+  fi
+done
+
+chown root:{{ app_group }} "${temporary_file}"
+chmod 0640 "${temporary_file}"
+mv --force "${temporary_file}" "${destination}"
+trap - EXIT

@@ -1,0 +1,29 @@
+[Unit]
+Description=Realtime Market Data API
+After=network-online.target postgresql.service redis-server.service realtime-marketdata-secrets.service
+Requires=postgresql.service redis-server.service realtime-marketdata-secrets.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ app_root }}/current
+EnvironmentFile={{ runtime_env_path }}
+EnvironmentFile={{ deployment_env_path }}
+ExecStart=/usr/bin/node {{ app_root }}/current/apps/api/dist/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+[Unit]
+Description=Apply Realtime Market Data database migrations
+After=postgresql.service realtime-marketdata-secrets.service
+Requires=postgresql.service realtime-marketdata-secrets.service
+
+[Service]
+Type=oneshot
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ app_root }}/current
+EnvironmentFile={{ runtime_env_path }}
+EnvironmentFile={{ deployment_env_path }}
+ExecStart=/usr/bin/pnpm --filter @realtime-pricing/db db:deploy
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true

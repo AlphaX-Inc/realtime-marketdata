@@ -1,0 +1,20 @@
+app_name: realtime-marketdata
+app_user: marketdata
+app_group: marketdata
+app_root: /opt/realtime-marketdata
+runtime_env_path: /etc/realtime-marketdata/runtime.env
+deployment_env_path: /etc/realtime-marketdata/deployment.env
+
+api_host: 127.0.0.1
+api_port: 8000
+caddy_host: 127.0.0.1
+caddy_port: 3000
+postgres_port: 55432
+redis_port: 56379
+
+tailscale_hostname: marketdata-prod
+tailscale_tags: "tag:server"
+tailscale_ssh: false
+
+swap_size_mb: 2048
+release_keep_count: 3

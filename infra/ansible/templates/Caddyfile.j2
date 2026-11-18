@@ -1,0 +1,27 @@
+http://:{{ caddy_port }} {
+	bind {{ caddy_host }}
+	encode zstd gzip
+
+	handle /health {
+		respond "ok" 200
+	}
+
+	@api path /api /api/*
+	handle @api {
+		uri strip_prefix /api
+		reverse_proxy {{ api_host }}:{{ api_port }}
+	}
+
+	handle /ws/prices {
+		reverse_proxy {{ api_host }}:{{ api_port }}
+	}
+
+	handle {
+		root * {{ app_root }}/current/apps/frontend/dist
+		route {
+			try_files {path} /index.html
+			header /index.html Cache-Control "public, max-age=0, must-revalidate"
+		}
+		file_server
+	}
+}

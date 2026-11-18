@@ -8,6 +8,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@realtime-pricing/ui/components/card";
+import { CodeBlock } from "@realtime-pricing/ui/components/code-block";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@realtime-pricing/ui/components/dialog";
 import {
   PageHeader,
   PageHeaderDescription,
@@ -25,6 +33,7 @@ import {
 } from "@realtime-pricing/ui/components/table";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { type BigdataCall, getBigdataActivity } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/bigdata")({
@@ -69,7 +78,76 @@ function callReason({ metadata: meta, missReason }: BigdataCall) {
   return { label: missReason ? missLabels[missReason] : "-", detail: "" };
 }
 
+function cacheVariant(meta: BigdataCall["metadata"]) {
+  if (meta.error) return "destructive";
+  return meta.cache === "HIT" ? "secondary" : "outline";
+}
+
+// Stored args are cut at 300 chars, so a long call may not parse; show it raw then.
+function prettyArgs(args: string) {
+  try {
+    return JSON.stringify(JSON.parse(args), null, 2);
+  } catch {
+    return args;
+  }
+}
+
+function CallDetail({ call }: { call: BigdataCall }) {
+  const meta = call.metadata;
+  const args = String(meta.args ?? "");
+  const reason = callReason(call);
+  const fields = [
+    { label: "Status", value: String(meta.status ?? "-") },
+    { label: "Duration", value: `${String(meta.durationMs ?? "-")} ms` },
+    { label: "Caller", value: String(meta.caller ?? "-") },
+    { label: "Cache key", value: String(meta.key ?? "-") },
+  ];
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          {String(meta.tool ?? "-")}
+          <Badge variant={cacheVariant(meta)}>{String(meta.cache ?? "-")}</Badge>
+        </DialogTitle>
+        <DialogDescription>{new Date(call.createdAt).toLocaleString()}</DialogDescription>
+      </DialogHeader>
+
+      <dl className="grid grid-cols-2 gap-3 text-sm">
+        {fields.map((field) => (
+          <div key={field.label}>
+            <dt className="text-muted-foreground">{field.label}</dt>
+            <dd className="break-all font-mono text-xs">{field.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="grid gap-1 text-sm">
+        <p className="text-muted-foreground">Reason</p>
+        <p>{reason.label}</p>
+        {reason.detail ? (
+          <p className="whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground">
+            {reason.detail}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="grid gap-1 text-sm">
+        <p className="text-muted-foreground">Args</p>
+        {args ? (
+          <CodeBlock className="whitespace-pre-wrap break-all text-xs">
+            {prettyArgs(args)}
+          </CodeBlock>
+        ) : (
+          <p>-</p>
+        )}
+      </div>
+    </>
+  );
+}
+
 function BigdataPage() {
+  const [selected, setSelected] = useState<BigdataCall | null>(null);
   const activityQuery = useQuery({
     queryKey: ["bigdata-activity"],
     queryFn: () => getBigdataActivity(100),
@@ -225,25 +303,26 @@ function BigdataPage() {
                     const reason = callReason(call);
 
                     return (
-                      <TableRow key={call.id}>
+                      <TableRow
+                        key={call.id}
+                        className="cursor-pointer"
+                        tabIndex={0}
+                        onClick={() => setSelected(call)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelected(call);
+                          }
+                        }}
+                      >
                         <TableCell className="whitespace-nowrap">
                           {new Date(call.createdAt).toLocaleString()}
                         </TableCell>
                         <TableCell className="font-medium">{String(meta.tool ?? "-")}</TableCell>
                         <TableCell>
-                          <Badge
-                            variant={
-                              meta.error
-                                ? "destructive"
-                                : meta.cache === "HIT"
-                                  ? "secondary"
-                                  : "outline"
-                            }
-                          >
-                            {String(meta.cache ?? "-")}
-                          </Badge>
+                          <Badge variant={cacheVariant(meta)}>{String(meta.cache ?? "-")}</Badge>
                         </TableCell>
-                        <TableCell className="max-w-[260px]" title={reason.detail || undefined}>
+                        <TableCell className="max-w-[260px]">
                           <p className="whitespace-nowrap">{reason.label}</p>
                           {reason.detail ? (
                             <p className="truncate font-mono text-xs text-muted-foreground">
@@ -258,10 +337,7 @@ function BigdataPage() {
                         <TableCell className="font-mono text-xs">
                           {String(meta.caller ?? "-")}
                         </TableCell>
-                        <TableCell
-                          className="max-w-[320px] truncate font-mono text-xs"
-                          title={args}
-                        >
+                        <TableCell className="max-w-[320px] truncate font-mono text-xs">
                           {args || "-"}
                         </TableCell>
                       </TableRow>
@@ -273,6 +349,12 @@ function BigdataPage() {
           </Card>
         </>
       )}
+
+      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          {selected ? <CallDetail call={selected} /> : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

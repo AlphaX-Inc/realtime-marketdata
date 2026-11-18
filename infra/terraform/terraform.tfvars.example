@@ -1,0 +1,12 @@
+name_prefix              = "marketdata-prod"
+location                 = "southeastasia"
+vm_size                  = "Standard_B2als_v2"
+admin_username            = "azureadmin"
+ssh_public_key_path       = "~/.ssh/id_ed25519.pub"
+bootstrap_ssh_source_cidr = "203.0.113.10/32"
+os_disk_size_gb           = 64
+
+tags = {
+  owner       = "platform"
+  cost-center = "marketdata"
+}
